@@ -33,6 +33,8 @@ int main(int argc, char* argv[]) {
 		mutation[mut].push_back(sample);
 	}
 	string folder = vm["out"].as<string>();
+	//if (folder.size() == 0 || folder[folder.size() - 1] != '/')
+	//	folder += '/';
 	size_t mutation_min_size = vm["min"].as<int>();
 	for (auto const & m : mutation) {
 		if (m.second.size() < mutation_min_size) continue;

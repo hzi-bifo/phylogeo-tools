@@ -26,7 +26,8 @@ $(BIN)/contract_short_branch: $(SRC)/contract_short_branch.cc $(SRC)/tree.h $(SR
 	g++ $(SRC)/contract_short_branch.cc -o $@ -O2 -std=c++11 -Wall -lboost_program_options
 
 $(BIN)/phylogeo_sankoff_general_dna: $(SRC)/phylogeo_sankoff_general_dna.cc $(SRC)/tree.h $(SRC)/state.h
-	g++ $(SRC)/phylogeo_sankoff_general_dna.cc -o $@ -O2 -std=c++11 -Wall -lboost_program_options -lboost_iostreams -I$(CONDA_PREFIX)/include -Wl,-rpath-link=$(CONDA_PREFIX)/lib -L$(CONDA_PREFIX)/lib
+	g++ $(SRC)/phylogeo_sankoff_general_dna.cc -o $@ -O2 -std=c++11 -Wall -lboost_program_options 
+	#g++ $(SRC)/phylogeo_sankoff_general_dna.cc -o $@ -O2 -std=c++11 -Wall -lboost_program_options -lboost_iostreams -I$(CONDA_PREFIX)/include -Wl,-rpath-link=$(CONDA_PREFIX)/lib -L$(CONDA_PREFIX)/lib
 
 $(BIN)/mutation-samples: $(SRC)/mutation-samples.cc
 	g++ $(SRC)/mutation-samples.cc -o $@ -O2 -std=c++11 -Wall -lboost_program_options
