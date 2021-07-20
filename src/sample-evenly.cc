@@ -80,6 +80,28 @@ struct INodeStarCmpLate {
 	}
 };
 
+struct TreeUnsampledPrinter {
+	ofstream& fo;
+	const set<string>& special_parents;
+	string active_parent;
+
+	TreeUnsampledPrinter(ofstream& fo, const set<string>& special_parents) : fo(fo), special_parents(special_parents), active_parent("NA") {
+	}
+
+	void visit(const INode& n) {
+		if (special_parents.find(n.label) != special_parents.end())
+			active_parent = n.label;
+		if (n.isLeaf() && !n.data.sampled)
+			fo << n.label << "\t" << active_parent << endl;
+	}
+
+
+	void finish(const INode& n) {
+		if (special_parents.find(n.label) != special_parents.end())
+			active_parent = "NA";
+	}
+};
+
 //we assume branch_length represets dissimilarity
 struct Sampler {
 	const map<string, Metadata>& metadata;
@@ -232,7 +254,7 @@ struct Sampler {
 	//rebuild the tree based on n.data.sampled for all nodes n
 	pair<INode, bool> sample(const INode& n) {
 		//height, size should be recalculated
-		INode r(n.label, n.branch_length, n.annotation, vector<INode>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
+		INode r(n.label, n.branch_length, n.annotation, list<INode>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
 		for (auto &c: n.children) {
 			pair<INode, bool> c_c_ = sample(c);
 			if (c_c_.second == false) {
@@ -291,104 +313,15 @@ struct Sampler {
 		cerr << "Samples in=" << sample_in << "/" << all_in << " out=" << sample_out << "/" << all_out << endl;
 	}
 
-	/*
 
-	RangeTree seg;
-	vector<INode*> samples;
-	vector<Point> node_dfs_values;
+	void print_unsampled(string fn, const vector<string>& parents, INode& n) const {
+		set<string> special_parents(parents.begin(), parents.end());
+		ofstream fo(fn);
+		TreeUnsampledPrinter tup(fo, special_parents);
+		TreeDFSGeneral<INode, TreeUnsampledPrinter> dfs(tup);
 
-	int dfs_vis, dfs_fin;
-	void dfs(INode& n, vector<INode*>& parents, double depth) {
-		if (n.isLeaf()) {
-			samples.push_back(&n);
-		}
-		n.data = Data(dfs_vis++, -1, depth + n.branch_length);
-		for (size_t i=1; parents.size() >= i; i*=2) {
-			n.data.parents.push_back(parents[parents.size() - i]);
-		}
-		//cerr << "D " << n.label << " " << parents.size() << " " << n.data.parents.size() <<  endl;
-		parents.push_back(&n);
-		for (auto &c: n.children) {
-			dfs(c, parents, depth + n.branch_length);
-		}
-		parents.pop_back();
-		n.data.dfs_fin = dfs_fin++;
-		node_dfs_values.push_back(Point(n.data.dfs_vis, n.data.dfs_fin));
+		dfs.dfs(n);
 	}
-	
-	INode run(INode& n) {
-		// we are more restricted for state samples
-		assert(range_for_state <= range);
-		dfs_vis = dfs_fin = 0;
-		node_dfs_values.clear();
-		vector<INode*> parents;
-		dfs(n, parents, 0);
-		cerr << "dfs called" << endl;
-		seg = RangeTree(dfs_vis, dfs_fin, node_dfs_values);
-		cerr << "seg created" << endl;
-
-		sort(samples.begin(), samples.end(), [](INode* s1, INode* s2) {return s1->data.depth > s2->data.depth;});
-		cerr << "samples sorted" << endl;
-
-		for (auto& s: samples) {
-			if (!is_covered(*s)) {
-				s->data.sampled = true;
-				add(*s);
-			}
-		}
-
-		return sample(n).first;
-	}
-
-	void add(INode& n) {
-		//cerr << "+ " << n.label << endl;
-		INode* nn = &n;
-		while (true) { 
-			nn->data.back_bone = true;
-			if (nn->data.parents.size() > 0) 
-				nn = nn->data.parents[0];
-			else
-				break;
-		}
-		//cerr << "  seg. " << n.data.dfs_vis << " " << n.data.dfs_fin << "=" << n.data.depth << endl;
-		seg.modify(n.data.dfs_vis, n.data.dfs_fin, n.data.depth);
-	}
-
-	bool is_covered(INode& n) {
-		INode* p = &n;
-		//cerr << " ? " << n.label << " " << n.data;
-		for (int l = ((int)p->data.parents.size())-1; p->data.parents.size() > 0 && p->data.parents[0]->data.back_bone == false; ) {
-			if (l < (int)p->data.parents.size() && p->data.parents[l]->data.back_bone == false)
-				p = p->data.parents[l];
-			else
-				l--;
-		}
-		//cerr << " first-non-backbone:" << p->label;
-		// selected.vis >= p->data.dfs_vis  && selected.fin < p->data.dfs_fin
-		if (p->data.parents.size() > 0) {
-			Data& data = p->data.parents[0]->data;
-			double d = seg.query(data.dfs_vis, 0, dfs_vis, data.dfs_fin),
-				min_dis_to_selected_samples = d - data.depth + n.data.depth - data.depth;
-			//cerr << " r="<<(d - data.depth + n.data.depth - data.depth) << " bb:" << p->data.parents[0]->label << " d:" << d << " bb-d: " << data.depth << " my-d:" << n.data.depth << endl;
-			if ((n.location == StateInOut::IN and min_dis_to_selected_samples <= range_for_state) or (n.location == StateInOut::OUT and min_dis_to_selected_samples <= range)) {
-				//if (n.location == StateInOut::IN) {
-				//	cerr << "W IN not selected " << n.location << " " << min_dis_to_selected_samples << " " << range_for_state << " " << range << " " << StateInOut::IN << endl;
-				//}
-				return true;
-			} else {
-				return false;
-			}
-		} else {
-			//no sample selected yet
-			//cerr << "  cov: first" << endl;
-			return false;
-		}
-	}
-
-
-
-	*/
-
 };
 
 // Algorithm: 
@@ -412,6 +345,7 @@ int main(int argc, char* argv[]) {
 	    ("print-annotation", po::value<bool>()->default_value(true), "print annotation")
 	    ("print-internal-node-label", po::value<bool>()->default_value(true), "print internal node labels")
 	    ("ilabel", po::value<bool>()->default_value(false), "override internal node labels")
+	    ("unsampled", po::value<vector<string>>()->multitoken(), "output file containing unsampled samples which are annotated as InState annotated with the first parent from the set. file-name [LIST OF PARENTS TO WHICH SAMPLES ARE ANNOTATED]")
 	;
 
 	po::variables_map vm;
@@ -474,6 +408,12 @@ int main(int argc, char* argv[]) {
 
 	if (vm.count("samples-out") > 0) {
 		sampler.write_sample_file(vm["samples-out"].as<string>(), contracted_phylo);
+	}
+
+	if (vm.count("unsampled") > 0) {
+		vector<string> parents = vm["unsampled"].as<vector<string>>();
+		parents.erase(parents.begin());
+		sampler.print_unsampled(vm["unsampled"].as<vector<string>>()[0], parents, phylo);
 	}
 
 	cerr << "output saved on " << output<< " " << "[" << vm["print-annotation"].as<bool>() << " " << vm["print-internal-node-label"].as<bool>() << "]" << endl;

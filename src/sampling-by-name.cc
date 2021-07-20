@@ -44,7 +44,7 @@ struct Sampler {
 
 	pair<INode, bool> sample(const INode& n) {
 		//height, size should be recalculated
-		INode r(n.label, n.branch_length, n.annotation, vector<INode>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
+		INode r(n.label, n.branch_length, n.annotation, list<INode>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
 		for (auto &c: n.children) {
 			pair<INode, bool> c_c_ = sample(c);
 			if (c_c_.second == false) {

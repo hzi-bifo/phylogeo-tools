@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <regex>
+#include <list>
 using namespace std;
 
 template<typename T>
@@ -109,22 +110,26 @@ struct Node {
 	string label;
 	float branch_length;
 	string annotation;
-	vector<Node<STATE,DATA>> children;
+	list<Node<STATE,DATA>> children;
 	STATE location;
 	int size, height, sample_size;
+	int edge_label;//used in jplace
 
 	array<double, STATE::size> sankoff_value;
 	DATA data;
 
 	Node(string _label="", float _branch_length=0, string _annotation="", 
-		const vector<Node<STATE,DATA>>& _children=vector<Node<STATE,DATA>>(), 
-		STATE _location=STATE::unknown, int _size=1, int _height=1, int _sample_size=0) :
+		const list<Node<STATE,DATA>>& _children=list<Node<STATE,DATA>>(), 
+		STATE _location=STATE::unknown, int _size=1, int _height=1, int _sample_size=0, int edge_label = -1) :
 		label(_label), branch_length(_branch_length), annotation(_annotation), children(_children),
-		location(_location), size(_size), height(_height), sample_size(_sample_size) {
+		location(_location), size(_size), height(_height), sample_size(_sample_size), edge_label(edge_label) {
 	}
 
 	void sankoff(const cost_type& cost) {
 		if (children.size() == 0) {
+			if (location == STATE::unknown) {
+				cerr << "Invalid location for tip node " << label << endl;
+			}
 			assert (location != STATE::unknown);
 			sankoff_value[location] = 0;
 			sankoff_value[1-location] = 1e10;
@@ -159,6 +164,9 @@ struct Node {
 					min_l = l;
 			sankoff2(min_l, cost);
 		} else {
+			if (location != STATE::unknown && location != (STATE)l) {
+				cerr << "Location label is incompatible " << label << " " << location << " " << l << " " << (STATE)l << endl;
+			}
 			assert(location == STATE::unknown || location == (STATE)l);
 			//location = static_cast<STATE>(l);
 			location = (STATE)l;
@@ -191,6 +199,7 @@ struct Node {
 		label = read_name(is);
 		annotation = read_annotation(is);
 		branch_length = read_branch_length(is);
+		edge_label = read_edge_label(is);
 		//
 		//if (label == "EPI_ISL_1142103") {
 		//	cerr << "Load " << label << " " << branch_length << " " << annotation << endl;
@@ -215,6 +224,17 @@ struct Node {
 		is.putback(c);
 		//cerr << " name: " << r << endl;
 		return r;
+	}
+
+	int read_edge_label(istream& is) {
+		if (is.peek() == '{') {
+			assert(is.get() == '{');
+			int e;
+			is >> e;
+			assert(is.get() == '}');
+			return e;
+		}
+		return -1;
 	}
 
 	float read_branch_length(istream& is) {
@@ -400,10 +420,11 @@ struct Node {
 			//remove me
 			return false;
 		size = height = 1;
+		/*
 		int n = 0;
 		for (size_t i =0, j=0; i<children.size(); i++) {
 			if (!keep[i]) {
-				vector<string> rr = children[i].leafLabels();
+				//vector<string> rr = children[i].leafLabels();
 				//cerr << "REM ";
 				//children[i].print(cerr) << endl;
 				//cerr << rr << endl;
@@ -421,7 +442,20 @@ struct Node {
 				n++;
 			}
 		}
-		children.resize(n);
+		*/
+		int keepIndex = 0;
+		//TODO: to be tested
+		for (auto i = children.begin(); i != children.end(); keepIndex++) {
+			if (!keep[keepIndex]) { 
+				removed_count += i->size;
+				i = children.erase(i);
+			} else {
+				size += i->size;
+				height = max(height, i->height + 1);
+				i++;
+			}
+		}
+		//children.resize(n);
 		return true;
 	}	
 
@@ -478,7 +512,7 @@ string get_name(string s) {
 }
 
 template<typename NODE>
-NODE load_tree(ifstream& fi) {
+NODE load_tree(istream& fi) {
 	//string l;
 	//getline(fi, l);
 	//istringstream is(l);
@@ -500,6 +534,7 @@ struct node_rename_by_map {
 				cerr << "Label " << n.label << " not present in map" << endl;
 			}
 			assert(label_map.find(n.label) != label_map.end());
+			//cerr << " L " << n.label << " -> " << label_map.find(n.label)->second << endl;
 			n.label = label_map.find(n.label)->second;
 		}
 	}
@@ -517,6 +552,8 @@ NODE load_nexus_tree(ifstream& fi) {
 			if (iequals(trim(s), "translate")) {
 				while (trim(s) != ";") {
 					vector<string> row = split(trim(s), '\t');
+					if (row.size() != 2)
+						row = split(trim(s), ' ');
 					if (row.size() == 2) {
 						string name = trim(row[1]);
 						if (name.size() > 0 && name[name.size()-1] == ',')
@@ -525,7 +562,9 @@ NODE load_nexus_tree(ifstream& fi) {
 					}
 					getline(fi, s);
 				}
-			} else if (iequals(s, "tree")) {
+				fi >> s;
+			}
+			if (iequals(s, "tree")) {
 				for (int c, i=0; (c=fi.get()) != '='; i++) {
 					//cerr << "C " << (char) c << endl;
 					assert(i < 50);
@@ -624,17 +663,17 @@ bool startsWith(string s, string w) {
 template<typename NODE>
 struct NodePrinterAbstractClass {
 	bool force_print_location;
-	bool print_internal_node_labels;
+	bool print_internal_node_labels, allow_print_annotation;
 
-	NodePrinterAbstractClass(bool force_print_location, bool print_internal_node_labels) : 
-		force_print_location(force_print_location), print_internal_node_labels(print_internal_node_labels) {
+	NodePrinterAbstractClass(bool force_print_location, bool print_internal_node_labels, bool allow_print_annotation = true) : 
+		force_print_location(force_print_location), print_internal_node_labels(print_internal_node_labels), allow_print_annotation(allow_print_annotation) {
 	}
 
 	ostream& print_node_info(ostream&os, const NODE& n) const {
 		if (n.label != "" && (print_internal_node_labels || (n.isLeaf()))) {
 			os << n.label;
 		}
-		if (n.annotation != "" || (n.location != NODE::StateType::unknown && force_print_location) /*|| sankoff_value[0] > -1*/) {
+		if (allow_print_annotation && (n.annotation != "" || (n.location != NODE::StateType::unknown && force_print_location) /*|| sankoff_value[0] > -1*/)) {
 			os << "[&";
 			bool empty = true;
 			if (n.annotation != "") {
@@ -766,8 +805,8 @@ struct NodePrinter : public NodePrinterAbstractClass<NODE> {
 template<typename NODE>
 struct NodePrinterGeneral : public NodePrinterAbstractClass<NODE> {
 
-	NodePrinterGeneral(bool _force_print_location = true, bool _print_internal_node_labels = true) : 
-		NodePrinterAbstractClass<NODE>(_force_print_location, _print_internal_node_labels) {}
+	NodePrinterGeneral(bool _force_print_location = true, bool _print_internal_node_labels = true, bool allow_print_annotation = true) : 
+		NodePrinterAbstractClass<NODE>(_force_print_location, _print_internal_node_labels, allow_print_annotation) {}
 
 	ostream& print(ostream& os, const NODE& n) const {
 		if (n.children.size() > 0) {
@@ -793,11 +832,14 @@ struct SamplePrinter {
 	SamplePrinter() {}
 
 	void run(const NODE& n, string fn) {
+		//cerr << "SamplePrinter::run() " << fn << " " << n.label << endl;
 		ofstream fo(fn);
+		//cerr << "SamplePrinter::run() file created " << endl;
 		dfs(n, fo);
 	}
 
 	void dfs(const NODE& n, ofstream& fo) {
+		//cerr << "sample printer " << n.label << endl;
 		if (n.isLeaf()) {
 			printed_count++;
 			fo << n.label << endl;
@@ -847,7 +889,7 @@ struct SubtreeExtractorOverSamples {
 	//rebuild subtree basd on sampled/non-sampled, each internal node should have at least two children.
 	pair<NODE, bool> sample(const NODE& n) {
 		//height, size should be recalculated
-		NODE r(n.label, n.branch_length, n.annotation, vector<NODE>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
+		NODE r(n.label, n.branch_length, n.annotation, list<NODE>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
 		for (auto &c: n.children) {
 			pair<NODE, bool> c_c_ = sample(c);
 			if (c_c_.second == false) {
@@ -897,7 +939,7 @@ struct SingleChildInternalNodeRemover {
 	}
 
 	NODE dfs(const NODE& n) {
-		NODE r(n.label, n.branch_length, n.annotation, vector<NODE>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
+		NODE r(n.label, n.branch_length, n.annotation, list<NODE>(), n.location, 1, 1, n.isLeaf() ? 1 : 0);
 		for (auto &c: n.children) {
 			NODE c_c = dfs(c);
 			//normal:
@@ -909,10 +951,129 @@ struct SingleChildInternalNodeRemover {
 		}
 		if (r.children.size() == 1) {
 			removed_internal_count++;
-			r.children[0].branch_length += r.branch_length;
-			r = std::move(r.children[0]);
+			r.children.begin()->branch_length += r.branch_length;
+			//r = std::move(*r.children.begin());
+			//TODO: we should make it faster!
+			//cerr << r.children.begin()->label << endl;
+			NODE tmp = *r.children.begin();
+			r = tmp;
 		}
 		return r;
 	}
 };
+
+template<typename NODE, typename DFS_ACTION>
+struct TreeDFSGeneral {
+
+	DFS_ACTION action;
+	TreeDFSGeneral(DFS_ACTION action) : action(action) {}
+
+	void dfs(NODE& n) {
+		action.visit(n);
+
+		for (auto & c : n.children) {
+			dfs(c);
+		}
+		action.finish(n);
+	}
+};
+
+
+template<typename NODE>
+struct NodePrinterNexus {
+
+	vector<pair<int, string>> index_name;
+	int current_index;
+
+	NodePrinterNexus() {}
+
+	void print_node_info(ostream& os, const NODE& n) {
+		if (n.label == "EPI_ISL_753872") 
+			cerr << "going to pring EPI_ISL_753872 ++ " << endl;
+
+		if (n.label != "") { //  && n.isLeaf()
+			int l = current_index++;
+			index_name.push_back(make_pair(l, n.label));
+			os << l;
+		}
+		if (n.annotation != "") {
+			os << "[&";
+			bool empty = true;
+			if (n.annotation != "") {
+				os << n.annotation;
+				empty = false;
+			}
+			if (n.location != NODE::StateType::unknown) {
+				if (!empty)
+					os << ",";
+				os << "location=" << n.location;
+				empty = false;
+			}
+			//os << "," << "s=" << sankoff_value[0] << "|" << sankoff_value[1];
+			os << "]";
+		}
+		os << ":" << n.branch_length;
+	}
+
+	ostream& print(ostream& os, const NODE& n) {
+			if (n.label == "EPI_ISL_753872") 
+				cerr << "going to pring EPI_ISL_753872 " << endl;
+
+		if (n.children.size() > 0) {
+			os << "(";
+			bool first = true;
+			for (auto &c : n.children) {
+				if (!first)
+					os << ",";
+				first = false;
+				print(os, c);
+			}
+			os << ")";
+		}
+			if (n.label == "EPI_ISL_753872") 
+				cerr << "going to pring EPI_ISL_753872 + " << endl;
+		print_node_info(os, n);
+		return os;
+	}
+
+	void run(ostream& os, const NODE& n) {
+		index_name.clear();
+		current_index = 1;
+		print(os, n);
+	}
+
+};
+
+
+template<typename NODE>
+void save_nexus_tree(ostream& os, const NODE& n) {
+	//cerr << "  nexus: begin " << endl;
+	ostringstream tree_oss;
+	NodePrinterNexus<NODE> npn;
+	npn.run(tree_oss, n);
+
+	os << "#NEXUS" << endl << endl
+	   << "Begin taxa;" << endl
+	   << "\tDimensions ntax=" << npn.index_name.size() << ";" << endl
+	   << "\tTaxlabels" << endl;
+	for (auto & iname : npn.index_name) {
+		os << "\t\t" << iname.second << endl;
+	}
+	os << "\t\t;" << endl << "End;" << endl << endl
+	   << "Begin trees;" << endl
+	   << "\tTranslate";
+	bool first = true;
+	for (auto & iname : npn.index_name) {
+		if (!first)
+			os << ",";
+		os << endl
+		   << "\t\t" << iname.first << " " << iname.second;
+		first = false;
+	}
+	os << endl << "\t;" << endl;
+
+	os << "tree TREE1 = [&R] " 
+	   << tree_oss.str() << ";" << endl
+	   << "End;" << endl;
+}
 

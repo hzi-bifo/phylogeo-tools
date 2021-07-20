@@ -116,6 +116,7 @@ struct Sankoff {
 	map<string, INode*> label_node;
 	int seq_len;
 	CharModel char_model;
+	bool omit_leaf_mutations = false;
 
 	void load_cost(string fn) {
 		char_model.load_cost(fn);
@@ -267,11 +268,13 @@ struct Sankoff {
 		}
 		for (auto const& c : n.children) {
 			size_t sz = mutations.size();
-			for (size_t i=0; i<c.data.seq.size(); i++) {
-				if (n.data.seq[i] != c.data.seq[i]) {
-					//mutations.push_back(mutation_cnt++);
-					mutations.push_back(n.data.seq[i] + to_string(i+1) + c.data.seq[i] + "_" + to_string(mutation_cnt));
-					mutation_cnt++;
+			if (!c.isLeaf() || !omit_leaf_mutations) {
+				for (size_t i=0; i<c.data.seq.size(); i++) {
+					if (n.data.seq[i] != c.data.seq[i]) {
+						//mutations.push_back(mutation_cnt++);
+						mutations.push_back(n.data.seq[i] + to_string(i+1) + c.data.seq[i] + "_" + to_string(mutation_cnt));
+						mutation_cnt++;
+					}
 				}
 			}
 			print_mutation_samples(os, c, mutations, mutation_cnt);
@@ -359,7 +362,7 @@ struct Sankoff {
 	}
 
 	void sankoff(INode& n) {
-		cerr << "assigning memory " << endl;
+		//cerr << "assigning memory " << endl;
 		assign_memory(n);
 		cerr << "sankoff " << n.label << " " << seq_len << endl;
 		sankoff_pre(n);
@@ -428,6 +431,7 @@ int main(int argc, char* argv[]) {
 	    ("out", po::value<string>()->required(), "output mutation-sample file")
 	    ("aln", po::value<string>()->required(), "aligned sequence file")
 	    ("cost", po::value<string>()->required(), "cost function file name")
+	    ("omit-leaf-mutations", "omit mutations happen at leaf nodes")
 	;
 
 
@@ -455,6 +459,10 @@ int main(int argc, char* argv[]) {
 	//cost_type cost = {cost_vector[0], cost_vector[1], cost_vector[2], cost_vector[3]};
 	//cerr << "cost: " << cost << endl;
 	sankoff.load_cost(vm["cost"].as<string>());
+
+	if (vm.count("omit-leaf-mutations")) {
+		sankoff.omit_leaf_mutations = true;
+	}
 
 	sankoff.build_map(phylo);
 	cerr << "build_map done with " << sankoff.label_node.size() << " samples" << endl;

@@ -17,7 +17,7 @@ struct Contractor {
 
 	INode contract(const INode& n) {
 		//height, size should be recalculated
-		INode r(n.label, n.branch_length <= limit && contract_leaf_enabled ? 0 : n.branch_length, n.annotation, vector<INode>(), n.location, 1, 1, n.sample_size);
+		INode r(n.label, n.branch_length <= limit && contract_leaf_enabled ? 0 : n.branch_length, n.annotation, list<INode>(), n.location, 1, 1, n.sample_size);
 		for (auto &c: n.children) {
 			INode c_c = contract(c);
 			if (c.branch_length <= limit && !c.isLeaf()) {

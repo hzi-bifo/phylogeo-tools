@@ -1,12 +1,70 @@
 #include "tree.h"
-#include "state.h"
+//#include "state.h"
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
+
+class StateInOut {
+public:
+	enum Type {
+		UNKNOWN=-1, IN=0, OUT=1
+	};
+
+	Type type;
+	StateInOut() = default;
+	constexpr StateInOut(Type _type) : type(_type) { }
+	constexpr StateInOut(int _type) : type(static_cast<Type>(_type)) { }
+	operator  Type() const { return type; }
+	constexpr bool operator == (StateInOut error) const { return type == error.type; }
+	constexpr bool operator != (StateInOut error) const { return type != error.type; }    
+	constexpr bool operator == (Type errorType) const { return type == errorType; }
+	constexpr bool operator != (Type errorType) const { return type != errorType; }
+	static const StateInOut unknown;
+	static const StateInOut def;
+	static const int size = 2;
+
+	//IN, OUT
+	static array<string, 2> names;
+};
+
+const StateInOut StateInOut::unknown = StateInOut::Type::UNKNOWN;
+const StateInOut StateInOut::def = StateInOut::Type::OUT;
+ostream& operator<<(ostream& os, StateInOut s) {
+	return os << ((s.type == StateInOut::Type::IN) ? StateInOut::names[0] : (s.type == StateInOut::Type::UNKNOWN ? "U" : StateInOut::names[1])) ;
+}
+
+istream& operator>>(istream& is, StateInOut& st) {
+	string s;
+	is >> s;
+	if (s == StateInOut::names[0])
+		st.type = StateInOut::Type::IN;
+	else if (s == StateInOut::names[1])
+		st.type = StateInOut::Type::OUT;
+	else {
+		st.type = StateInOut::Type::OUT;
+		cerr << "W Invalid state " << s << " " << StateInOut::names[0] << " " << StateInOut::names[1] << endl;
+		//if (s != "unknown")
+		//	cerr << "Invalid state " << s << " " << StateInOut::names[0] << " " << StateInOut::names[1] << endl;
+		//assert(s == "unknown");
+		//st.type = StateInOut::Type::UNKNOWN;
+	}
+	return is;
+}
+
 
 array<string, StateInOut::size> StateInOut::names = {"UK", "nonUK"};
 
 typedef int Data;
 typedef Node<StateInOut, Data> INode;
+
+struct TreeInternalNodeLocationCleaner {
+	void visit(INode & n) {
+		if (!n.isLeaf())
+			n.location = StateInOut::UNKNOWN;
+	}
+
+	void finish(INode& n) {
+	}
+};
 
 
 int main(int argc, char* argv[]) {
@@ -15,7 +73,10 @@ int main(int argc, char* argv[]) {
 	po::options_description desc("Allowed options");
 	desc.add_options()
 	    ("help", "Run sankoff")
+	    ("nosankoff", "Do not run sankoff, only do cleaning.")
 	    ("merge", "Merge additional location to the location as its 4rd element")
+	    ("save-nexus", "Save output in nexus format")
+	    ("remove-internal-node-locations", "Remove locations of internal nodes")
 	    ("metadata", po::value<string>(), "metadata file")
 	    ("in", po::value<string>(), "input tree")
 	    ("out", po::value<string>(), "output tree")
@@ -23,6 +84,8 @@ int main(int argc, char* argv[]) {
 	    ("cost", po::value<vector<float>>()->multitoken()->default_value(vector<float>{0, 1, 1, 0}, "0 1 1 0"), "cost function, in->in, in->out, out->in, out->out")
 	    ("cond", po::value<vector<string>>()->multitoken(), "conditions e.g. --cond 2 == Germany 3 >= Dusseldorf --cond 2 == Germany 4 >= Dusseldorf")
 	    ("print-annotation", po::value<bool>()->default_value(true), "print annotation")
+	    ("set-tip-location", po::value<bool>()->default_value(true), "set tip location from metadata")
+	    ("print-allow-annotation", po::value<bool>()->default_value(true), "allow printing annotations. If setted to false, annotations are removed.")
 	    ("print-internal-node-label", po::value<bool>()->default_value(true), "print internal node labels")
 	    ("ilabel", po::value<bool>()->default_value(false), "override internal node labels")
 	    ("single-child", po::value<bool>()->default_value(true), "allow single-child internal nodes")
@@ -115,13 +178,21 @@ int main(int argc, char* argv[]) {
 	//cerr << "isolate_matrix:" << isolate_matrix << endl;
 	//cerr << "cost" << cost << endl;
 
-	phylo.set_tip_location(isolate_matrix);
+	if (vm["set-tip-location"].as<bool>())
+		phylo.set_tip_location(isolate_matrix);
 
 	//phylo.annotation= "location=Germany";
+	if (vm.count("remove-internal-node-locations") > 0) {
+		TreeInternalNodeLocationCleaner cleanerAction;
+		TreeDFSGeneral<INode, TreeInternalNodeLocationCleaner> dfsCleaner(cleanerAction);
+		dfsCleaner.dfs(phylo);
+	}
 
-	phylo.sankoff(cost);
-	phylo.sankoff2(-1, cost);
-	//phylo.print(cerr);
+	if (vm.count("nosankoff") == 0) {
+		phylo.sankoff(cost);
+		phylo.sankoff2(-1, cost);
+		//phylo.print(cerr);
+	}
 
 	int removed_count = 0;
 	//ofstream fo(splitted_tree_prefix + "1" + ".trees");
@@ -145,8 +216,12 @@ int main(int argc, char* argv[]) {
 	}
 
 	ofstream fo(output);
-	NodePrinterGeneral<INode> np(vm["print-annotation"].as<bool>(), vm["print-internal-node-label"].as<bool>());
-	np.print(fo, phylo) << ";" << endl;
+	if (vm.count("save-nexus") > 0) {
+		save_nexus_tree(fo, phylo);
+	} else {
+		NodePrinterGeneral<INode> np(vm["print-annotation"].as<bool>(), vm["print-internal-node-label"].as<bool>(), vm["print-allow-annotation"].as<bool>());
+		np.print(fo, phylo) << ";" << endl;
+	}
 
 	cerr << "output saved on " << output<< " " << "[" << vm["print-annotation"].as<bool>() << " " << vm["print-internal-node-label"].as<bool>() << "]" << endl;
 	return 0;

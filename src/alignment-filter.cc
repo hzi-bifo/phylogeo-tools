@@ -6,9 +6,12 @@
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/filter/lzma.hpp>
-#include "tree.h"
+#include <vector>
 #include <set>
+#include "fasta.h"
+#include "tree.h"
 namespace io = boost::iostreams;
+using namespace std;
 
 int main(int argc, char* argv[]) {
 	//cerr << "main" << endl;
@@ -33,47 +36,14 @@ int main(int argc, char* argv[]) {
 	cerr << "sample_ids loaded " << sample_ids.size() << endl;
 
 	set<string> samples(sample_ids.begin(), sample_ids.end()), samples_found;
+	FastaLoaderSequenceFilter filter(cout, samples);
+	FastaLoader<FastaLoaderSequenceFilter> fastaLoader(filter);
+	fastaLoader.load(file_alignment);
 
-	int dup_count=0;
-	string seq, id;
-	for (string line; getline(file_alignment, line); ) {
-		//cerr << "L " << line << endl;
-		if (line.size() == 0) continue;
-		if (line[0] == '>') {
-			if (id != "" && samples.find(id) != samples.end()) {
-				if (samples_found.find(id) != samples_found.end()) {
-					//cerr << "dup " << id << endl;
-					dup_count++;
-				} else {
-				//cerr << "S " << id << endl;
-					cout << ">" << id << endl;
-					cout << seq << endl;
-					samples_found.insert(id);
-				}
-			}
-			//id = split(line.substr(1), '|')[0];
-			id = line.substr(1);
-			if (id.find("|") != string::npos) 
-				id = id.substr(0, id.find("|"));
-			seq = "";
-			//cerr << "new id (" << id << ") " << id.size() << endl;
-		} else {
-			seq += line;
-		}
-	}
-	if (id != "" && samples.find(id) != samples.end()) {
-		if (samples_found.find(id) != samples_found.end()) {
-			dup_count++;
-		} else {
-			cout << ">" << id << endl;
-			cout << seq << endl;
-			samples_found.insert(id);
-		}
-	}
-	cerr << "saved " << samples_found.size() << " samples " << "dup: " << dup_count << endl;
+	cerr << "saved " << fastaLoader.filter.samples_found.size() << " samples " << "dup: " << fastaLoader.filter.dup_count << endl;
 	int samples_notfount_count = 0;
 	for (auto const& s:samples) {
-		if (samples_found.find(s) == samples_found.end()) {
+		if (fastaLoader.filter.samples_found.find(s) == fastaLoader.filter.samples_found.end()) {
 			if (samples_notfount_count < 10)
 				cerr << "W " << s << " ";
 			samples_notfount_count++;

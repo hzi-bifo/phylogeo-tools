@@ -7,10 +7,13 @@ namespace po = boost::program_options;
 
 array<string, StateInOut::size> StateInOut::names = {"UK", "nonUK"};
 
-struct Data {
-	tr1::unordered_map<string, int> lineage_child_index;
-};
+struct Data;
 typedef Node<StateInOut, Data> INode;
+
+struct Data {
+	tr1::unordered_map<string, INode*> lineage_child_index;
+};
+
 
 struct Builder {
 
@@ -99,15 +102,17 @@ struct Builder {
 			//cerr << "  " << npango << " " << nep << endl;
 			if (n.data.lineage_child_index.find(npango) == n.data.lineage_child_index.end()) {
 				INode c(npango, 1);
-				n.data.lineage_child_index[npango] = n.children.size();
+				//n.data.lineage_child_index[npango] = n.children.size();
 				n.children.push_back(c);
+				n.data.lineage_child_index[npango] = &n.children.back();
 				//cerr << "   new child created " << c.label << endl;
 			}
 
 
-			int ci = n.data.lineage_child_index.find(npango)->second;
+			//int ci = n.data.lineage_child_index.find(npango)->second;
+			INode* ci = n.data.lineage_child_index.find(npango)->second;
 			//cerr << "   A " << n.children[ci].label << endl;
-			add_to_tree(n.children[ci], m, nep != string::npos ? nep + 1 : string::npos);
+			add_to_tree(*ci, m, nep != string::npos ? nep + 1 : string::npos);
 		}
 	}
 

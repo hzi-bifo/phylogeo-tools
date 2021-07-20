@@ -122,11 +122,11 @@ istream& operator>>(istream& is, StateInOut& st) {
 	else if (s == StateInOut::names[1])
 		st.type = StateInOut::Type::OUT;
 	else {
+		if (s != "unknown")
+			cerr << "Invalid state " << s << " " << StateInOut::names[0] << " " << StateInOut::names[1] << endl;
 		assert(s == "unknown");
 		st.type = StateInOut::Type::UNKNOWN;
 	}
 	return is;
 }
-
-
 

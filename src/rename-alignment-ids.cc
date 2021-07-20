@@ -4,6 +4,7 @@
 #include <string>
 #include <set>
 #include "tree.h"
+#include "fasta.h"
 
 int main(int argc, char* argv[]) {
 	map<string, Metadata> metadata = load_map(argv[1]);
@@ -20,6 +21,7 @@ int main(int argc, char* argv[]) {
 		//cerr << "X " << m.second.name << " " << m.second.id << endl;
 	}
 
+/*
 	set<string> samples_found;
 	string seq, id;
 	for (string line; getline(cin, line); ) {
@@ -50,10 +52,15 @@ int main(int argc, char* argv[]) {
 		cout << seq << endl;
 		samples_found.insert(id);
 	}
-	cerr << "saved " << samples_found.size() << " samples" << endl;
+*/
+	FastaLoaderSequenceRename filter(cout, name_to_id);
+	FastaLoader<FastaLoaderSequenceRename> fastaLoader(filter);
+	fastaLoader.load(cin);
+
+	cerr << "saved " << filter.samples_found.size() << " samples" << endl;
 	int samples_notfount_count = 0;
 	for (auto const& s:name_to_id) {
-		if (samples_found.find(s.first) == samples_found.end()) {
+		if (filter.samples_found.find(s.first) == filter.samples_found.end()) {
 			if (samples_notfount_count < 10)
 				cerr << "W " << s.first << " ";
 			samples_notfount_count++;
