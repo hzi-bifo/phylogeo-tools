@@ -66,6 +66,15 @@ struct TreeInternalNodeLocationCleaner {
 	}
 };
 
+struct TreeInternalNodeLabelCleaner {
+	void visit(INode & n) {
+		if (!n.isLeaf())
+			n.label = "";
+	}
+
+	void finish(INode& n) {
+	}
+};
 
 int main(int argc, char* argv[]) {
 
@@ -77,19 +86,23 @@ int main(int argc, char* argv[]) {
 	    ("merge", "Merge additional location to the location as its 4rd element")
 	    ("save-nexus", "Save output in nexus format")
 	    ("remove-internal-node-locations", "Remove locations of internal nodes")
+	    ("remove-internal-node-label", "Remove label of internal nodes")
 	    ("metadata", po::value<string>(), "metadata file")
 	    ("in", po::value<string>(), "input tree")
+	    ("inout-file", po::value<string>(), "input tree, list of files given in a file")
 	    ("out", po::value<string>(), "output tree")
 	    ("location_label", po::value<vector<string>>()->multitoken(), "location labels, e.g. Germany nonGermany")
 	    ("cost", po::value<vector<float>>()->multitoken()->default_value(vector<float>{0, 1, 1, 0}, "0 1 1 0"), "cost function, in->in, in->out, out->in, out->out")
 	    ("cond", po::value<vector<string>>()->multitoken(), "conditions e.g. --cond 2 == Germany 3 >= Dusseldorf --cond 2 == Germany 4 >= Dusseldorf")
 	    ("print-annotation", po::value<bool>()->default_value(true), "print annotation")
 	    ("set-tip-location", po::value<bool>()->default_value(true), "set tip location from metadata")
+	    ("remove-invalid-children", po::value<bool>()->default_value(true), "remove invalid (not in metadata) children")
 	    ("print-allow-annotation", po::value<bool>()->default_value(true), "allow printing annotations. If setted to false, annotations are removed.")
 	    ("print-internal-node-label", po::value<bool>()->default_value(true), "print internal node labels")
 	    ("ilabel", po::value<bool>()->default_value(false), "override internal node labels")
 	    ("single-child", po::value<bool>()->default_value(true), "allow single-child internal nodes")
 	    ("samples", po::value<string>(), "sample files")
+	    ("nexus-print-internal-labels", po::value<bool>()->default_value(true), "print internal nodes' labels in nexus output")
 	;
 
 	// Just parse the options without storing them in a map.
@@ -120,13 +133,9 @@ int main(int argc, char* argv[]) {
 
 	StateInOut::names = {vm["location_label"].as<vector<string>>()[0], vm["location_label"].as<vector<string>>()[1]};
 
-	string annotation = vm["metadata"].as<string>(),
-		tree_file_name = vm["in"].as<string>(),
-		output = vm["out"].as<string>();
+	string annotation = vm["metadata"].as<string>();
 	map<string, Metadata> id_to_name = load_map(annotation);
 	cerr << "metadata loaded" << endl;
-
-	INode phylo = load_tree<INode>(tree_file_name) ;
 
 	//0:GERMANY, 1:NON_GERMANY
 	//cost_type cost = {0,1,1,0};
@@ -178,51 +187,87 @@ int main(int argc, char* argv[]) {
 	//cerr << "isolate_matrix:" << isolate_matrix << endl;
 	//cerr << "cost" << cost << endl;
 
-	if (vm["set-tip-location"].as<bool>())
-		phylo.set_tip_location(isolate_matrix);
+	ifstream inout_file;
+	for (int i=0; ; i++) {
+		string	tree_file_name,
+			output;
+		if (vm.count("inout-file")) {
+			if (i == 0) {
+				inout_file.open(vm["inout-file"].as<string>());
+			}
+			if (!(inout_file >> tree_file_name >> output))
+				break;
+		} else {
+			if (i > 0) break;
+			tree_file_name = vm["in"].as<string>();
+			output = vm["out"].as<string>();
+		}
+		INode phylo = load_tree<INode>(tree_file_name) ;
 
-	//phylo.annotation= "location=Germany";
-	if (vm.count("remove-internal-node-locations") > 0) {
-		TreeInternalNodeLocationCleaner cleanerAction;
-		TreeDFSGeneral<INode, TreeInternalNodeLocationCleaner> dfsCleaner(cleanerAction);
-		dfsCleaner.dfs(phylo);
+		//{
+		//	NodePrinterGeneral<INode> np(vm["print-annotation"].as<bool>(), vm["print-internal-node-label"].as<bool>(), vm["print-allow-annotation"].as<bool>());
+		//	np.print(cerr, phylo) << ";" << endl;
+		//}
+
+		if (vm["set-tip-location"].as<bool>())
+			phylo.set_tip_location(isolate_matrix);
+
+		//phylo.annotation= "location=Germany";
+		if (vm.count("remove-internal-node-locations") > 0) {
+			TreeInternalNodeLocationCleaner cleanerAction;
+			TreeDFSGeneral<INode, TreeInternalNodeLocationCleaner> dfsCleaner(cleanerAction);
+			dfsCleaner.dfs(phylo);
+		}
+
+		if (vm.count("nosankoff") == 0) {
+			phylo.sankoff(cost);
+			phylo.sankoff2(-1, cost);
+			//phylo.print(cerr);
+		}
+
+		int removed_count = 0;
+		//ofstream fo(splitted_tree_prefix + "1" + ".trees");
+		if (vm["remove-invalid-children"].as<bool>())
+			phylo.remove_invalid_children(id_to_name, removed_count);
+
+		if (vm["ilabel"].as<bool>() == true) {
+			InternalNodeLabeler<INode> internalNodeLabeler;
+			internalNodeLabeler.run(phylo);
+			cerr << "internal nodes relabeled" << endl;
+		}
+		if (vm.count("remove-internal-node-label") > 0) {
+			TreeInternalNodeLabelCleaner cleanerAction;
+			TreeDFSGeneral<INode, TreeInternalNodeLabelCleaner> dfsCleaner(cleanerAction);
+			dfsCleaner.dfs(phylo);
+		}
+
+		if (vm["single-child"].as<bool>() == false) {
+			SingleChildInternalNodeRemover<INode> singleChildInternalNodeRemover;
+			phylo = singleChildInternalNodeRemover.run(phylo);
+			cerr << "Single child internal nodes removed " << singleChildInternalNodeRemover.removed_internal_count << endl;
+		}
+
+		if (vm.count("samples") > 0) {
+			SamplePrinter<INode> sp;
+			sp.run(phylo, vm["samples"].as<string>());
+			cerr << "samples printed in " << vm["samples"].as<string>() << " for " << sp.printed_count << " samples" << endl;
+		}
+
+		//{
+		//	NodePrinterGeneral<INode> np(vm["print-annotation"].as<bool>(), vm["print-internal-node-label"].as<bool>(), vm["print-allow-annotation"].as<bool>());
+		//	np.print(cerr, phylo) << ";" << endl;
+		//}
+
+		ofstream fo(output);
+		if (vm.count("save-nexus") > 0) {
+			save_nexus_tree(fo, phylo, vm["nexus-print-internal-labels"].as<bool>());
+		} else {
+			NodePrinterGeneral<INode> np(vm["print-annotation"].as<bool>(), vm["print-internal-node-label"].as<bool>(), vm["print-allow-annotation"].as<bool>());
+			np.print(fo, phylo) << ";" << endl;
+		}
+
+		cerr << "done " << tree_file_name << " -> " << output<< " " << "[" << vm["print-annotation"].as<bool>() << " " << vm["print-internal-node-label"].as<bool>() << "]" << endl;
+
 	}
-
-	if (vm.count("nosankoff") == 0) {
-		phylo.sankoff(cost);
-		phylo.sankoff2(-1, cost);
-		//phylo.print(cerr);
-	}
-
-	int removed_count = 0;
-	//ofstream fo(splitted_tree_prefix + "1" + ".trees");
-	phylo.remove_invalid_children(id_to_name, removed_count);
-
-	if (vm["ilabel"].as<bool>() == true) {
-		InternalNodeLabeler<INode> internalNodeLabeler;
-		internalNodeLabeler.run(phylo);
-		cerr << "internal nodes relabeled" << endl;
-	}
-	if (vm["single-child"].as<bool>() == false) {
-		SingleChildInternalNodeRemover<INode> singleChildInternalNodeRemover;
-		phylo = singleChildInternalNodeRemover.run(phylo);
-		cerr << "Single child internal nodes removed " << singleChildInternalNodeRemover.removed_internal_count << endl;
-	}
-
-	if (vm.count("samples") > 0) {
-		SamplePrinter<INode> sp;
-		sp.run(phylo, vm["samples"].as<string>());
-		cerr << "samples printed in " << vm["samples"].as<string>() << " for " << sp.printed_count << " samples" << endl;
-	}
-
-	ofstream fo(output);
-	if (vm.count("save-nexus") > 0) {
-		save_nexus_tree(fo, phylo);
-	} else {
-		NodePrinterGeneral<INode> np(vm["print-annotation"].as<bool>(), vm["print-internal-node-label"].as<bool>(), vm["print-allow-annotation"].as<bool>());
-		np.print(fo, phylo) << ";" << endl;
-	}
-
-	cerr << "output saved on " << output<< " " << "[" << vm["print-annotation"].as<bool>() << " " << vm["print-internal-node-label"].as<bool>() << "]" << endl;
 	return 0;
 }

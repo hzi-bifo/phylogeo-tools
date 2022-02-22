@@ -9,7 +9,8 @@ ALL= phylogeo_sankoff_general \
 	sample-evenly \
 	tree-build-as-pangolin \
 	rename-alignment-ids \
-	compare-partitions 
+	compare-partitions \
+	split_tree_general
 
 CONDA_PREFIX=/home/hforoughmand/miniconda3/envs/covid-uk/
 SRC=src/
@@ -58,6 +59,9 @@ $(BIN)/rename-alignment-ids: $(SRC)/rename-alignment-ids.cc $(SRC)/tree.h
 
 $(BIN)/compare-partitions: $(SRC)/compare-partitions.cc $(SRC)/tree.h
 	g++ -o $@ $(SRC)/compare-partitions.cc -std=c++11 -O2 -lboost_program_options 
+
+$(BIN)/split_tree_general: $(SRC)/split_tree_general.cc $(SRC)/tree.h $(SRC)/state.h
+	g++ -o $@ $(SRC)/split_tree_general.cc -std=c++11 -O2 -lboost_program_options 
 
 $(BIN):
 	mkdir build/

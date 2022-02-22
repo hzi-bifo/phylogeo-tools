@@ -431,6 +431,7 @@ int main(int argc, char* argv[]) {
 	    ("out", po::value<string>()->required(), "output mutation-sample file")
 	    ("aln", po::value<string>()->required(), "aligned sequence file")
 	    ("cost", po::value<string>()->required(), "cost function file name")
+	    ("print-alignment", po::value<string>(), "print alignment")
 	    ("omit-leaf-mutations", "omit mutations happen at leaf nodes")
 	;
 
@@ -469,7 +470,9 @@ int main(int argc, char* argv[]) {
 	sankoff.load_dna(vm["aln"].as<string>());
 
 	sankoff.sankoff(phylo);
-	//sankoff.print_alignment(output, phylo);
+	if (vm.count("print-alignment")) {
+		sankoff.print_alignment(vm["print-alignment"].as<string>(), phylo);
+	}
 	sankoff.print_mutation_samples(output, phylo);
 
 	if (vm.count("out-dep") > 0) {

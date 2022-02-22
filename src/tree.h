@@ -266,7 +266,8 @@ struct Node {
 					getline(nv_iss, n, '=');
 					if (n == "location") {
 						nv_iss >> location;
-						//cerr << "R loc " << label << " " << location << endl;
+						//if (location == location.unknown)
+						//	cerr << "R loc " << label << " " << location << endl;
 					} else {
 						if (rr.size() > 0) rr += ",";
 						rr += nv;
@@ -728,6 +729,7 @@ struct NodePrinter : public NodePrinterAbstractClass<NODE> {
 				}
 			}
 			if (printed_node_count < 2 /*&& all_printed_are_leaf */) {
+				//cerr << "Adding " << printed_node_count << " " ;
 				for (auto &n : t.children) {
 					if (n.location != include_state) {
 						if (printed_node_count > 0)
@@ -737,7 +739,26 @@ struct NodePrinter : public NodePrinterAbstractClass<NODE> {
 						printed_node_count ++;
 					}
 				}
+				//cerr << " " << printed_node_count << endl;
 			}
+			while (printed_node_count < 2) {
+				NODE n;
+				n.location = NODE::StateType::def;
+				n.size = 1;
+				n.sample_size = 0;
+				n.height = 1;
+				n.branch_length = 0;
+				n.label = "NON_GERMANY_LABEL_" + random_string();
+				n.annotation = "height=0";
+				if (printed_node_count > 0)
+					os << ",";
+				this->print_node_info(os, n);
+				//n.print_node_info(os, true);
+				printed_node_count ++;
+				//cerr << " + " << printed_node_count << " " << n.label << " " << t.label << endl;
+				//this->print_node_info(cerr, n);
+			}
+
 			os << ")";
 		}
 
@@ -745,8 +766,30 @@ struct NodePrinter : public NodePrinterAbstractClass<NODE> {
 		this->print_node_info(os, t);
 	}
 
+	string random_string() {
+		std::string tmp_s;
+		static const char alphanum[] =
+			"0123456789"
+			"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			"abcdefghijklmnopqrstuvwxyz";
+
+		//srand( (unsigned) time(NULL));
+		int len = 10;
+
+		tmp_s.reserve(len);
+
+		for (int i = 0; i < len; ++i) 
+			tmp_s += alphanum[rand() % (sizeof(alphanum) - 1)];
+
+
+		return tmp_s;
+	}
+
 	void find_and_print_lineage(const NODE& t) {
 		//assert(t.location != include_state && t.location != STATE::unknown);
+		if (!(t.location != NODE::StateType::unknown)) {
+			cerr << "E: " << t.location << " " << t.location.names[0] << " " << t.location.names[1] << endl;
+		}
 		assert(t.location != NODE::StateType::unknown);
 		//for the case that root is include_state. The result is a bit wired.
 		if (t.location == include_state) {
@@ -786,7 +829,11 @@ struct NodePrinter : public NodePrinterAbstractClass<NODE> {
 
 	void init_file(const NODE& t) {
 		index++;
-		ofstream fo(prefix + to_string(index) + ".tree");
+		string fn = prefix + to_string(index) + ".tree";
+		if (prefix.find("?") != string::npos)
+			fn = prefix.substr(0, prefix.find("?")) + to_string(index) + prefix.substr(prefix.find("?")+1);
+		//cerr << "F: " << fn << " " << prefix << endl;
+		ofstream fo(fn);
 		fo << "#NEXUS" << endl;
 		fo << "BEGIN TREES;" << endl;
 		fo << "tree STATE_0 = ";
@@ -982,7 +1029,7 @@ struct TreeDFSGeneral {
 template<typename NODE>
 struct NodePrinterNexus {
 
-	vector<pair<int, string>> index_name;
+	vector<tuple<int, string, bool>> index_name;
 	int current_index;
 
 	NodePrinterNexus() {}
@@ -993,7 +1040,7 @@ struct NodePrinterNexus {
 
 		if (n.label != "") { //  && n.isLeaf()
 			int l = current_index++;
-			index_name.push_back(make_pair(l, n.label));
+			index_name.push_back(make_tuple(l, n.label, n.isLeaf()));
 			os << l;
 		}
 		if (n.annotation != "") {
@@ -1046,18 +1093,24 @@ struct NodePrinterNexus {
 
 
 template<typename NODE>
-void save_nexus_tree(ostream& os, const NODE& n) {
+void save_nexus_tree(ostream& os, const NODE& n, bool print_internal_taxa = false) {
 	//cerr << "  nexus: begin " << endl;
 	ostringstream tree_oss;
 	NodePrinterNexus<NODE> npn;
 	npn.run(tree_oss, n);
 
+	int ntaxa = 0;
+	for (auto & iname : npn.index_name)
+		if (get<2>(iname) || print_internal_taxa)
+			ntaxa++;
+
 	os << "#NEXUS" << endl << endl
 	   << "Begin taxa;" << endl
-	   << "\tDimensions ntax=" << npn.index_name.size() << ";" << endl
+	   << "\tDimensions ntax=" << ntaxa << ";" << endl
 	   << "\tTaxlabels" << endl;
 	for (auto & iname : npn.index_name) {
-		os << "\t\t" << iname.second << endl;
+		if (get<2>(iname) || print_internal_taxa)
+			os << "\t\t" << get<1>(iname) << endl;
 	}
 	os << "\t\t;" << endl << "End;" << endl << endl
 	   << "Begin trees;" << endl
@@ -1066,8 +1119,9 @@ void save_nexus_tree(ostream& os, const NODE& n) {
 	for (auto & iname : npn.index_name) {
 		if (!first)
 			os << ",";
-		os << endl
-		   << "\t\t" << iname.first << " " << iname.second;
+		if (get<2>(iname) || print_internal_taxa)
+			os << endl
+			   << "\t\t" << get<0>(iname) << " " << get<1>(iname);
 		first = false;
 	}
 	os << endl << "\t;" << endl;
