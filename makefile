@@ -67,4 +67,4 @@ $(BIN):
 	mkdir build/
 
 clean:
-	rm $(ALL)
+	rm -rf $(ALL)
