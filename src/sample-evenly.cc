@@ -281,9 +281,18 @@ struct Sampler {
 		} else if (sampling_method == SAMPLIG_METHOD_CASE) {
 			if (case_count.find(make_pair(b.country, b.epiweek)) != case_count.end()) {
 				int tc = time_case_count.find(b.epiweek)->second;
+				if (tc < 0) {
+					cerr << "W: neg tc " << tc << endl;
+					tc = 0;
+				}
 				if (tc == 0) 
 					return 0;
-				int cnt = case_count.find(make_pair(b.country, b.epiweek))->second * bucket_sample_size_in / tc;
+				int cnt = 1L * case_count.find(make_pair(b.country, b.epiweek))->second * bucket_sample_size_in / tc;
+				//if(!(tc >= 0 && bucket_sample_size_in >= 0 && case_count.find(make_pair(b.country, b.epiweek))->second >= 0)) {
+				if (cnt < 0) {
+					cerr << "W: samplingSizeOfBucket: neg value " << b.country << " " << b.epiweek << " " << tc << " " << bucket_sample_size_in  << " " << case_count.find(make_pair(b.country, b.epiweek))->second << " " << cnt << endl;
+					cnt = 0;
+				}
 				return cnt;
 			} else {
 				return 0;
@@ -478,6 +487,10 @@ struct Sampler {
 			}
 			try {
 				int c = x[case_index] == "" ? 0 : stoi(x[case_index]);
+				if (c < 0) {
+					cerr << "W neg:" << x[case_index] << " " << x[location_index] << endl;
+					c = 0;
+				}
 				case_count[make_pair(x[location_index], bucket_time_index(x[date_index]))] += c;
 			} catch (const std::invalid_argument & e) {
 				std::cout << e.what() << x[case_index] << " " << line << "\n";

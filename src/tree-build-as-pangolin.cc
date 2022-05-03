@@ -122,7 +122,7 @@ set<string> load_fasta_ids(istream& fi) {
 	vector<string> ret;
 	const int line_size = 1 << 10;
 	char line[line_size];
-	for (; fi.getline(line, line_size) > 0; ) {
+	for (; fi.getline(line, line_size); ) {
 	//for (string line; getline(fi, line); ) {
 		if (line[0] != 0 && line[0] == '>') {
 			char* divider_pos = strchr(line, '|');
