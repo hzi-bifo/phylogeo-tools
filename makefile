@@ -14,7 +14,7 @@ ALL= phylogeo_sankoff_general \
 
 CONDA_PREFIX=/home/hforoughmand/miniconda3/envs/covid-uk/
 SRC=src/
-BIN=build/
+BIN=build
 #ALL: $(join $(addsuffix $(BIN), $(dir $(SOURCE)))
 ALL: $(BIN) $(addprefix $(BIN)/, $(ALL))
 
@@ -49,7 +49,7 @@ $(BIN)/sample-and-partition-by-name: $(SRC)/sample-and-partition-by-name.cc $(SR
 	g++ -o $@ $(SRC)/sample-and-partition-by-name.cc -O2 -Wall -std=c++11 -lboost_iostreams  -I$(CONDA_PREFIX)/include -lboost_program_options
 
 $(BIN)/sample-evenly: $(SRC)/sample-evenly.cc $(SRC)/tree.h $(SRC)/rangetree.h
-	g++ -o $@ $(SRC)/sample-evenly.cc -O2 -Wall -std=c++11 -lboost_program_options
+	g++ -o $@ $(SRC)/sample-evenly.cc -O2 -Wall -std=c++11 -lboost_program_options -I$(CONDA_PREFIX)/include -L$(CONDA_PREFIX)/lib
 
 $(BIN)/tree-build-as-pangolin: $(SRC)/tree-build-as-pangolin.cc $(SRC)/tree.h
 	g++ -o $@ $(SRC)/tree-build-as-pangolin.cc -O2 -Wall -std=c++11 -lboost_program_options

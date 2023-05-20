@@ -104,6 +104,13 @@ public:
 	static const StateInOut def;
 	static const int size = 2;
 
+	operator std::string() const {
+		if (type >= 0 && (size_t) type < names.size()) {
+			return names[type];
+		}
+		return "";
+	}
+
 	//IN, OUT
 	static array<string, 2> names;
 };

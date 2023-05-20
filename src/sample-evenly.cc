@@ -111,6 +111,7 @@ struct TreeUnsampledPrinter {
 
 const int BUCKET_TIME_INTERVAL_WEEK = 1, BUCKET_TIME_INTERVAL_MONTH = 2;
 const int SAMPLIG_METHOD_IN_OUT_THRESHOLD = 1, SAMPLIG_METHOD_IN_OUT_RATIO = 2, SAMPLIG_METHOD_CASE = 3;
+const int BUCKET_LOCATION_COUNTRY = 1, BUCKET_LOCATION_INOUT=2;
 //we assume branch_length represets dissimilarity
 struct Sampler {
 	const map<string, Metadata>& metadata;
@@ -118,6 +119,7 @@ struct Sampler {
 	int sampling_method;
 	int bucket_sample_size_in, bucket_sample_size_out, bucket_size_in_ratio, bucket_size_out_ratio;
 	int removed_internal_count, removed_sample_count;
+	int bucket_location_method = BUCKET_LOCATION_COUNTRY;
 
 	size_t special_count = 0;
 	set<string> special_nodes;
@@ -146,9 +148,15 @@ struct Sampler {
 	Bucket calc_bucket(const INode& n) {
 		auto m = metadata.find(n.label);
 		assert(m != metadata.end());
-		vector<string> loc_split = split(m->second.location, '/');
 		int ti = bucket_time_index(m->second.date);
-		return Bucket(ti, trim(loc_split[1]));
+		if (bucket_location_method == BUCKET_LOCATION_COUNTRY) {
+			vector<string> loc_split = split(m->second.location, '/');
+			return Bucket(ti, trim(loc_split[1]));
+		} else if (bucket_location_method == BUCKET_LOCATION_INOUT) {
+			return Bucket(ti, (string)n.location);
+		} else {
+			throw runtime_error("invalid bucket selection method");
+		}
 		//return Bucket(days_since(m->second.date) / 7, n.location);
 	}
 
@@ -583,8 +591,10 @@ int main(int argc, char* argv[]) {
 	    ("ilabel", po::value<bool>()->default_value(false), "override internal node labels")
 	    ("unsampled", po::value<vector<string>>()->multitoken(), "output file containing unsampled samples which are annotated as InState annotated with the first parent from the set. file-name [LIST OF PARENTS TO WHICH SAMPLES ARE ANNOTATED]")
 	    ("bucket-time-interval", po::value<string>()->default_value("week"), "which bucket time interval to use, week of month")
+	    ("bucket-location", po::value<string>()->default_value("country"), "Each bucket consists of a time and a location. This parameter shows which location granularity to use. Options are 'country' or 'inout' for two-state (IN/OUT).")
 	    ("unbias-method", po::value<string>()->default_value("threshold"), "unbias method inside each epiweek, either threshold or ratio or case. If unbias-method is ratio, bucket-size should contain 3 values: bucket_size_in bucket_in_ratio bucket_out_ratio.")
 	    ("case", po::value<string>(), "file containing number of cases. Useful when unbias-method is case.")
+
 	;
 
 	po::variables_map vm;
@@ -635,6 +645,7 @@ int main(int argc, char* argv[]) {
 		sampler.special_count = stoi(special[0]);
 		sampler.special_nodes = set<string>(special.begin() + 1, special.end());
 	}
+	sampler.bucket_location_method = vm["bucket-location"].as<string>() == "country" ? BUCKET_LOCATION_COUNTRY : vm["bucket-location"].as<string>() == "inout" ? BUCKET_LOCATION_INOUT : -1;
 
 	vector<string> keep = vm["keep"].as<vector<string>>();
 	if (keep.size() >= 3) {
