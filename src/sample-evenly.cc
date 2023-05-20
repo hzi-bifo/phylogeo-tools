@@ -145,18 +145,24 @@ struct Sampler {
 			throw runtime_error("invalid time interval");
 	}
 
+	string bucket_location(string country) {
+		if (bucket_location_method == BUCKET_LOCATION_COUNTRY) {
+			return country;
+		} else if (bucket_location_method == BUCKET_LOCATION_INOUT) {
+			// cerr << "bucket_location: " << country << " " << (country == StateInOut::names[0] ? country : StateInOut::names[1]) << endl;
+			return country == StateInOut::names[0] ? country : StateInOut::names[1];
+		} else {
+			throw runtime_error("invalid bucket selection method");
+		}
+	}
+
 	Bucket calc_bucket(const INode& n) {
 		auto m = metadata.find(n.label);
 		assert(m != metadata.end());
 		int ti = bucket_time_index(m->second.date);
-		if (bucket_location_method == BUCKET_LOCATION_COUNTRY) {
-			vector<string> loc_split = split(m->second.location, '/');
-			return Bucket(ti, trim(loc_split[1]));
-		} else if (bucket_location_method == BUCKET_LOCATION_INOUT) {
-			return Bucket(ti, (string)n.location);
-		} else {
-			throw runtime_error("invalid bucket selection method");
-		}
+
+		vector<string> loc_split = split(m->second.location, '/');
+		return Bucket(ti, bucket_location(trim(loc_split[1])));
 		//return Bucket(days_since(m->second.date) / 7, n.location);
 	}
 
@@ -301,6 +307,7 @@ struct Sampler {
 					cerr << "W: samplingSizeOfBucket: neg value " << b.country << " " << b.epiweek << " " << tc << " " << bucket_sample_size_in  << " " << case_count.find(make_pair(b.country, b.epiweek))->second << " " << cnt << endl;
 					cnt = 0;
 				}
+				// cerr << "samplingSizeOfBucket: " << b.country << " " << b.epiweek << " " << tc << " " << cnt << " " << "bucket_sample_size_in=" << bucket_sample_size_in << " case=" << (case_count.find(make_pair(b.country, b.epiweek))->second) << endl;
 				return cnt;
 			} else {
 				return 0;
@@ -324,16 +331,16 @@ struct Sampler {
 			random_shuffle(b.second.begin(), b.second.end());
 			//int size = b.first.country == StateInOut::IN ? bucket_sample_size_in : bucket_sample_size_out;
 			int size = samplingSizeOfBucket(b.first, time_case_count);
-			//int size_0 = size;
+			// int size_0 = size;
 			for (int i=0; size > 0 && i < (int) b.second.size(); i++) {
 				if (b.second[i]->data.sampled == false) {
 					b.second[i]->data.sampled = true;
 					size--;
 				}
 			}
-			//cerr << "  b " << b.first.country << " " << b.first.epiweek << " s=" << (size_0 - size) << " -- ";
+			// cerr << "  b " << b.first.country << " " << b.first.epiweek << " s=" << (size_0 - size) << " " << size_0 << " -- ";
 		}
-		//cerr << endl;
+		// cerr << endl;
 
 		//debug info
 		map<int, map<string, int>> bucket_time;
@@ -499,7 +506,7 @@ struct Sampler {
 					cerr << "W neg:" << x[case_index] << " " << x[location_index] << endl;
 					c = 0;
 				}
-				case_count[make_pair(x[location_index], bucket_time_index(x[date_index]))] += c;
+				case_count[make_pair(bucket_location(x[location_index]), bucket_time_index(x[date_index]))] += c;
 			} catch (const std::invalid_argument & e) {
 				std::cout << e.what() << x[case_index] << " " << line << "\n";
 				throw e;
@@ -599,11 +606,11 @@ int main(int argc, char* argv[]) {
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
-        if (vm.count("help")) {
+	if (vm.count("help")) {
 		cout << "Usage: " << argv[0] << " [options] ...\n";
 		cout << desc;
 		return 0;
-        }
+	}
 
 	try {
 		po::notify(vm);
@@ -645,7 +652,8 @@ int main(int argc, char* argv[]) {
 		sampler.special_count = stoi(special[0]);
 		sampler.special_nodes = set<string>(special.begin() + 1, special.end());
 	}
-	sampler.bucket_location_method = vm["bucket-location"].as<string>() == "country" ? BUCKET_LOCATION_COUNTRY : vm["bucket-location"].as<string>() == "inout" ? BUCKET_LOCATION_INOUT : -1;
+	sampler.bucket_location_method = vm["bucket-location"].as<string>() == "country" ? BUCKET_LOCATION_COUNTRY : 
+		(vm["bucket-location"].as<string>() == "inout" ? BUCKET_LOCATION_INOUT : -1);
 
 	vector<string> keep = vm["keep"].as<vector<string>>();
 	if (keep.size() >= 3) {
