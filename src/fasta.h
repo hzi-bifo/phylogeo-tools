@@ -3,7 +3,9 @@
 #include <map>
 #include <set>
 #include <cassert>
-
+#include <ranges>
+#include <locale>  // consume_header, locale
+#include <codecvt> // codecvt_utf8_utf16
 
 template<typename FILTER>
 struct FastaLoader {
@@ -12,15 +14,61 @@ struct FastaLoader {
 	FastaLoader(FILTER filter = FILTER()) : filter(filter) {
 	}
 
+	std::string to_string(const std::string& s) const {
+		return s;
+	}
+
+	std::string to_string(const std::wstring& s) const {
+		
+		auto str_v = s | std::views::filter([] (wchar_t c) { return ((uint)c) < 128;})  | std::views::transform([] (wchar_t c) { return (char) c;});
+		std::string str(str_v.begin(), str_v.end());
+
+		// wstring wstr(str.begin(), str.end());
+
+		// if (str.size() != s.size()) {
+		// 	wcerr << L"W string with unicode: " << str.size() << L" " << s.size() << L" " << s << L" " << wstr << endl;
+		// }
+
+		return str;
+	}
+
+	int line_count = 0, record_count = 0;
+
 	void load(std::istream& file_alignment) {
+		line_count = 0;
+		record_count = 0;
+
+	    // std::locale loc("en_US.UTF-8"); // You can also use "" for the default system locale
+	    // file_alignment.imbue(loc); // Use it for file input
+		// std::locale loc("C.UTF-8");
+		// const std::locale loc = std::locale(std::locale(), new std::codecvt_utf8<wchar_t>());
+		// file_alignment.imbue(loc);
+
+		// file_alignment.imbue(std::locale(
+		// 	file_alignment.getloc(),
+		// 	new std::codecvt_utf8_utf16<wchar_t, 0x10FFFF, std::consume_header>));
+
+		// std::cerr << "Stream is in a fail=" << file_alignment.fail() << " bad=" << file_alignment.bad() << " good=" << file_alignment.good() << " eof=" << file_alignment.eof()<< " rdstate=" << file_alignment.rdstate() << " state." << std::endl;
+
 		filter.clear();
 		std::string seq, id;
-		for (std::string line; getline(file_alignment, line); ) {
+		for (std::string wline; getline(file_alignment, wline); ) {
 			//cerr << "L " << line << endl;
+			// if (wline.find(L"EPI_ISL_1001837") != wstring::npos) {
+			// 	cerr << "D Found EPI_ISL_1001837! " << to_string(wline) << endl;
+			// }
+			// cerr << "L '" << to_string(wline) << "'" << endl;
+			// std::cerr << "Stream is in a fail=" << file_alignment.fail() << " bad=" << file_alignment.bad() << " good=" << file_alignment.good() << " eof=" << file_alignment.eof()<< " rdstate=" << file_alignment.rdstate() << " state." << std::endl;
+
+			string line = to_string(wline);
+			// if (line.find("EPI_ISL_1001837") != string::npos) {
+			// 	cerr << "D Found EPI_ISL_1001837! S: " << line << endl;
+			// }
 			if (line.size() == 0) continue;
 			if (line[0] == '>') {
 				if (id != "") {
 					filter.process(id, seq);
+					record_count++;
 				}
 				//id = split(line.substr(1), '|')[0];
 				id = line.substr(1);
@@ -30,14 +78,21 @@ struct FastaLoader {
 			} else {
 				seq += line;
 			}
+			line_count++;
 		}
 		if (id != "") {
 			filter.process(id, seq);
+			record_count++;
 		}
+
+
+		// std::cerr << "Stream is in a fail=" << file_alignment.fail() << " bad=" << file_alignment.bad() << " good=" << file_alignment.good() << " eof=" << file_alignment.eof()<< " rdstate=" << file_alignment.rdstate() << " state." << std::endl;
+
 	}
 
+
 	void load(std::string fn) {
-		std::ifstream fi(fn);
+		std::wifstream fi(fn);
 		load(fi);
 	}
 };

@@ -331,16 +331,16 @@ struct Sampler {
 			random_shuffle(b.second.begin(), b.second.end());
 			//int size = b.first.country == StateInOut::IN ? bucket_sample_size_in : bucket_sample_size_out;
 			int size = samplingSizeOfBucket(b.first, time_case_count);
-			// int size_0 = size;
+			int size_0 = size;
 			for (int i=0; size > 0 && i < (int) b.second.size(); i++) {
 				if (b.second[i]->data.sampled == false) {
 					b.second[i]->data.sampled = true;
 					size--;
 				}
 			}
-			// cerr << "  b " << b.first.country << " " << b.first.epiweek << " s=" << (size_0 - size) << " " << size_0 << " -- ";
+			cerr << "  b " << b.first.country << " " << b.first.epiweek << " s=" << (size_0 - size) << " " << size_0 << " -- ";
 		}
-		// cerr << endl;
+		cerr << endl;
 
 		//debug info
 		map<int, map<string, int>> bucket_time;

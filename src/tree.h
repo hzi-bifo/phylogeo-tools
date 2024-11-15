@@ -9,7 +9,13 @@
 #include <cassert>
 #include <regex>
 #include <list>
+#include <array>
 using namespace std;
+
+template<typename T, typename S>
+ostream& operator<<(ostream& os, const pair<T,S>& p) {
+        return os << "[" << p.first << "," << p.second << "]";
+}
 
 template<typename T>
 ostream& operator<<(ostream& os, const vector<T>& v) {
@@ -566,16 +572,26 @@ NODE load_nexus_tree(ifstream& fi) {
 				fi >> s;
 			}
 			if (iequals(s, "tree")) {
-				for (int c, i=0; (c=fi.get()) != '='; i++) {
+				for (int c = fi.get(), i=0, inside_bracket = false; fi && (inside_bracket || c != '='); i++) {
+					// for brackets before equal sign
+					if (c == '[') 
+						inside_bracket = true;
+					if (c == ']')
+						inside_bracket = false;
 					//cerr << "C " << (char) c << endl;
-					assert(i < 50);
+					assert(i < 200);
+					c = fi.get();
 				}
+				assert(fi);
 				seek_spaces(fi);
 				if (fi.peek() == '[') {
 					while (fi.get() != ']')
 						;
 				}
 				seek_spaces(fi);
+				if (fi.peek() != '(') {
+					cerr << "Expected '(' while '" << char(fi.peek()) << "' found." << endl;
+				}
 				assert(fi.peek() == '(');
 				break;
 			} else {
