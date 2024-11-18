@@ -7,11 +7,13 @@
 #include <locale>  // consume_header, locale
 #include <codecvt> // codecvt_utf8_utf16
 
+using namespace std;
+
 template<typename FILTER>
 struct FastaLoader {
 
 	FILTER filter;
-	FastaLoader(FILTER filter = FILTER()) : filter(filter) {
+	FastaLoader(const FILTER& filter = FILTER()) : filter(filter) {
 	}
 
 	std::string to_string(const std::string& s) const {
@@ -34,7 +36,8 @@ struct FastaLoader {
 
 	int line_count = 0, record_count = 0;
 
-	void load(std::istream& file_alignment) {
+	template<typename STREAM = std::istream>
+	void load(STREAM& file_alignment) {
 		line_count = 0;
 		record_count = 0;
 
@@ -50,8 +53,9 @@ struct FastaLoader {
 
 		// std::cerr << "Stream is in a fail=" << file_alignment.fail() << " bad=" << file_alignment.bad() << " good=" << file_alignment.good() << " eof=" << file_alignment.eof()<< " rdstate=" << file_alignment.rdstate() << " state." << std::endl;
 
+		// std::cerr << "LOAD: " << filter.file_size << " " << std::endl;
 		filter.clear();
-		std::string seq, id;
+		std::string seq, id, raw_id;
 		for (std::string wline; getline(file_alignment, wline); ) {
 			//cerr << "L " << line << endl;
 			// if (wline.find(L"EPI_ISL_1001837") != wstring::npos) {
@@ -67,11 +71,12 @@ struct FastaLoader {
 			if (line.size() == 0) continue;
 			if (line[0] == '>') {
 				if (id != "") {
-					filter.process(id, seq);
+					filter.process(id, seq, raw_id, file_alignment);
 					record_count++;
 				}
 				//id = split(line.substr(1), '|')[0];
 				id = line.substr(1);
+				raw_id = id;
 				id = filter.id(id);
 				seq = "";
 				//cerr << "new id (" << id << ") " << id.size() << endl;
@@ -79,9 +84,14 @@ struct FastaLoader {
 				seq += line;
 			}
 			line_count++;
+
+			// //TODO: DEBUG
+			// if (line_count > 1000000) {
+			// 	break;
+			// }
 		}
 		if (id != "") {
-			filter.process(id, seq);
+			filter.process(id, seq, raw_id, file_alignment);
 			record_count++;
 		}
 

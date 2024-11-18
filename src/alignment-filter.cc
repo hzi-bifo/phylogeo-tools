@@ -1,21 +1,89 @@
-#define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <boost/iostreams/filtering_streambuf.hpp>
-#include <boost/iostreams/copy.hpp>
-#include <boost/iostreams/filter/gzip.hpp>
-#include <boost/iostreams/filter/lzma.hpp>
 #include <vector>
 #include <set>
-#include "tree.h"
-#include "fasta.h"
 #include <codecvt>
 #include <ranges>
+#include <sstream>
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include "fasta.h"
+#include <regex>
+#include "argagg.hpp"
+#include "tarxz-reader.h"
 
 
-namespace io = boost::iostreams;
 using namespace std;
+
+template<typename T, typename S>
+ostream& operator<<(ostream& os, const pair<T,S>& p) {
+        return os << "[" << p.first << "," << p.second << "]";
+}
+
+template<typename T>
+ostream& operator<<(ostream& os, const vector<T>& v) {
+	os << "[";
+	for (auto const &i: v)
+		os << i << " ";
+	return os << "]";
+}
+
+template<typename T, size_t L>
+ostream& operator<<(ostream& os, const array<T, L>& v) {
+	os << "[";
+	for (auto const &i: v)
+		os << i << " ";
+	return os << "]";
+}
+
+template<typename T, typename S>
+ostream& operator<<(ostream& os, const map<T,S>& v) {
+	os << "[";
+	for (auto const &i: v)
+		os << i.first <<":" << i.second << " ";
+	return os << "]";
+}
+
+
+vector<string> split(const string& l, char splitter = '\t') {
+	vector<string> x;
+	std::istringstream iss(l);
+	for (string token; getline(iss, token, splitter); ) {
+		x.push_back(token);
+	}
+	return x;
+}
+
+std::string trim(const std::string& str,
+                 const std::string& whitespace = " \t\n\r")
+{
+    const auto strBegin = str.find_first_not_of(whitespace);
+    if (strBegin == std::string::npos)
+        return ""; // no content
+
+    const auto strEnd = str.find_last_not_of(whitespace);
+    const auto strRange = strEnd - strBegin + 1;
+
+    string r = str.substr(strBegin, strRange);
+    //cerr << "trim " << r << endl;
+    return r;
+}
+
+int indexOf(const vector<string> v, const std::initializer_list<string>& keys) {
+	for (auto const &k : keys) {
+		if ( std::find(v.begin(), v.end(), k) != v.end())
+			return find(v.begin(), v.end(), k) - v.begin();
+	}
+	cerr << "Warning: not found indexOf "  << v << " " << vector<string>(keys.begin(), keys.end()) << endl;
+	//assert(1 != 1);
+	return -1;
+}
+
+#include "metadata.h"
+
+
 
 struct FastaLoaderSequenceFilterIdIndex {
 	int dup_count=0;
@@ -27,15 +95,76 @@ struct FastaLoaderSequenceFilterIdIndex {
 	int id_index;
 	bool progress;
 
-	FastaLoaderSequenceFilterIdIndex(std::ostream& os, const std::set<std::string>& samples, int id_index, bool progress = false) : os(os), samples(samples), id_index(id_index), progress(progress) {
+	// {0} = epi, {1} = name, {2} = date
+	string format_template;
+
+	int64_t file_size = -1;
+
+	FastaLoaderSequenceFilterIdIndex(std::ostream& os, 
+		const std::set<std::string>& samples, 
+		int id_index, 
+		bool progress = false, 
+		const string& format_template = "{0}") : os(os), samples(samples), id_index(id_index), progress(progress), format_template(format_template) {
 	}
 
 	void clear() {
 		dup_count = 0;
 		samples_found.clear();
+		assert(id_index == -1);
 	}
 
-	std::string id(std::string raw_id) {
+	std::string id_printable(const std::string& raw_id) const {
+		vector<string> x = split(raw_id, '|');
+		string epi = "", name = "", date = "";
+	    std::regex year_regex("^([0-9]{4})");
+		for (const auto& xx : x) {
+			if (xx.starts_with("EPI_ISL_")) {
+				epi = xx;
+			}
+			if (std::sregex_iterator(xx.begin(), xx.end(), year_regex) != std::sregex_iterator()) {
+				date = xx;
+			}
+			if (xx.starts_with("hCoV-19/")) {
+				vector<string> xxx = split(xx, '/');
+				if (xxx.size() >= 3) {
+					name = xxx[xxx.size()-3] + '/' + xxx[xxx.size()-2] + '/' + xxx[xxx.size()-1];
+				}
+			}
+		}
+
+		if (name == "" || epi == "" || date == "") {
+			cerr << "E id-format '" << raw_id << "' " << name << " " << epi << " " << date << endl;
+		}
+
+		return std::vformat(format_template, std::make_format_args(epi, name, date));
+
+		// return name + "|" + epi + "|" + date;
+	}
+
+	std::string id(const std::string& raw_id) {
+		// const char* search_template = "EPI_ISL_";
+		// const int template_length = 8;
+		// string ret;
+		// int match_size = 0;
+		// for (const char *l = raw_id.c_str(), *c = raw_id.c_str(); ; c++) {
+		// 	if (*c == 0 || *c == '|') {
+		// 		if (match_size == template_length) {
+		// 			string ret = string(l, c);
+		// 			return ret;
+		// 		}
+		// 		l=c+1;
+		// 		match_size = 0;
+		// 		if (*c == 0) {
+		// 			break;
+		// 		} else {
+		// 			continue;
+		// 		}
+		// 	}
+		// 	if (match_size == (c-l) && (c-l) < template_length && *c == search_template[c-l]) {
+		// 		match_size++;
+		// 	}
+		// }
+		// return raw_id;
 		vector<string> x = split(raw_id, '|');
 		// if (raw_id.find("EPI_ISL_1001837") != string::npos) {
 		// 	cerr << "D raw_id Found! " << x << " " << id_index << endl;
@@ -68,11 +197,93 @@ struct FastaLoaderSequenceFilterIdIndex {
 	}
 
 	int count =0, accept_count=0;
-	void process(std::string id, std::string seq) {
-		if (count % 100000 == 0) {
-			cerr << "\r" << accept_count << "/" << count << "          ";
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+	string elapsed_time_format(const std::chrono::steady_clock::duration& elapsed) const {
+		auto elapsed_time = std::chrono::hh_mm_ss(elapsed);
+		string ret = "";
+		bool h = false, m = false;
+		if (elapsed_time.hours().count() > 0) {
+			ret += to_string(elapsed_time.hours().count()) + "h";
+			h = true;
+		}
+		if (h || elapsed_time.minutes().count() > 0) {
+			ret += to_string(elapsed_time.minutes().count()) + "m";
+			m = true;
+		}
+		if (!h && (m || elapsed_time.seconds().count() > 0)) {
+			ret += to_string(elapsed_time.seconds().count()) + "s";
+			// s = true;
+		}
+		return ret;
+	}
+
+	void show_progress(const string& id, int64_t loc) const {
+		int percentage = file_size > 0 ? (loc * 100 + file_size/2) / file_size : -1;
+		const std::string blocks[] = {" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"};
+		stringstream os;
+		os << accept_count << "/" << count << 
+			"'" << id << "':";
+
+		const size_t first_part_size = 20, second_part_size=40;
+		
+		cerr << os.str().substr(0, first_part_size);
+		for (size_t i=os.str().size() ; i<first_part_size; i++)
+			cerr << " ";
+		
+		std::string bar = "";
+		if (file_size > 0) {
+			size_t filled_length = (loc*second_part_size + file_size/2/8)/file_size;
+			for (size_t i=0; i<filled_length; i++)
+				bar += blocks[8];
+			if (filled_length < second_part_size) {
+				bar += blocks[((loc*second_part_size * 8 + file_size/2)/file_size) % 8] + 
+					std::string(second_part_size - filled_length - 1, ' ');
+			}
+		} else {
+			bar = std::string(second_part_size, ' ');
+		}
+		cerr << "[" << bar <<  "]";
+		cerr << " ";
+
+		cerr << (percentage >= 0 ? to_string(percentage) + "%" : "");
+
+		// cerr << "(" << std::chrono::duration_cast<std::chrono::seconds> (std::chrono::steady_clock::now() - begin).count() << "s)";
+
+		cerr << "(";
+		cerr << elapsed_time_format(std::chrono::steady_clock::now() - begin);
+		
+		if (percentage >= 1) {
+			cerr << " ETA:";
+			cerr << elapsed_time_format((100-percentage) * (std::chrono::steady_clock::now() - begin) / percentage);
+		}
+		
+		cerr << ")";
+		// cerr << loc << "/" << file_size;
+		cerr << "\r";
+	}
+
+	void process(const std::string& id, const std::string& seq, const std::string& raw_id, std::istream& is) {
+		process(id, seq, raw_id);
+		if (progress && count % 100000 == 0) {
+			show_progress(id, is.tellg());
+		}
+	}
+
+	void process(const std::string& id, const std::string& seq, const std::string& raw_id, TarXZReader& is) {
+		process(id, seq, raw_id);
+		if (progress && count % 100000 == 0) {
+			show_progress(id, is.current_file_offset);
+		}
+	}
+
+
+	void process(const std::string& id, const std::string& seq, const std::string& raw_id) {
+		if (count == 0) {
+			begin = std::chrono::steady_clock::now();
 		}
 		count++;
+		// cerr << "}'" << id << "'" << seq.size() << endl;
 		if (samples.find(id) != samples.end()) {
 			if (samples_found.find(id) != samples_found.end()) {
 				//cerr << "dup " << id << endl;
@@ -80,7 +291,7 @@ struct FastaLoaderSequenceFilterIdIndex {
 			} else {
 			//cerr << "S " << id << endl;
 				accept_count++;
-				os << ">" << id << std::endl;
+				os << ">" << id_printable(raw_id) << std::endl;
 				os << seq << std::endl;
 				samples_found.insert(id);
 			}
@@ -92,200 +303,286 @@ struct FastaLoaderSequenceFilterIdIndex {
 
 // }
 
-#include <boost/iostreams/traits.hpp>
-#include <boost/iostreams/read.hpp>
-#include <boost/iostreams/write.hpp>
-#include <boost/iostreams/seek.hpp>
 
-// CategoryT: boost.iostreams device category tag
-// DeviceT  : type of associated narrow device
-// CharT    : (wide) character type of this device adapter 
-template< typename CategoryT, typename DeviceT, typename CharT >
-class basic_reinterpret_device
-{
-public:
-    using category = CategoryT;               // required by boost::iostreams device concept
-    using char_type = CharT;                  // required by boost::iostreams device concept
-    using associated_device = DeviceT;
-    using associated_char_type = typename boost::iostreams::char_type_of< DeviceT >::type;
-    static_assert( sizeof( associated_char_type ) == 1, "Associated device must have a byte-sized char_type" );
+// struct Metadata2 {
+// 	string id, name, date, location, location_add, pangolin, aasub;
+// 	Metadata2(string _id = "", string _name = "", string _date = "", string _location = "", string _location_add = "", string pangolin ="", string aasub="") :
+// 		id(_id), name(_name), date(_date), location(_location), location_add(_location_add), pangolin(pangolin), aasub(aasub) {}
 
-    // Default constructor.
-    basic_reinterpret_device() = default;
-
-    // Construct from a narrow device
-    explicit basic_reinterpret_device( DeviceT* pDevice ) :
-        m_pDevice( pDevice ) {}
-
-    // Get the asociated device.
-    DeviceT* get_device() const { return m_pDevice; }
-
-    // Read up to n characters from the underlying data source into the buffer s, 
-    // returning the number of characters read; return -1 to indicate EOF
-    std::streamsize read( char_type* s, std::streamsize n )
-    {
-        ThrowIfDeviceNull();
-
-        std::streamsize bytesRead = boost::iostreams::read( 
-            *m_pDevice, 
-            reinterpret_cast<associated_char_type*>( s ), 
-            n * sizeof( char_type ) );
-
-        if( bytesRead == static_cast<std::streamsize>( -1 ) )  // EOF
-            return bytesRead;
-        return bytesRead / sizeof( char_type );
-    }
-
-    // Write up to n characters from the buffer s to the output sequence, returning the 
-    // number of characters written.
-    std::streamsize write( const char_type* s, std::streamsize n )
-    {
-        ThrowIfDeviceNull();
-
-        std::streamsize bytesWritten = boost::iostreams::write(
-            *m_pDevice, 
-            reinterpret_cast<const associated_char_type*>( s ), 
-            n * sizeof( char_type ) );
-
-        return bytesWritten / sizeof( char_type );
-    }
-
-    // Advances the read/write head by off characters, returning the new position, 
-    // where the offset is calculated from:
-    //  - the start of the sequence if way == ios_base::beg
-    //  - the current position if way == ios_base::cur
-    //  - the end of the sequence if way == ios_base::end
-    std::streampos seek( std::streamoff off, std::ios_base::seekdir way ) 
-    {
-        ThrowIfDeviceNull();
-
-        std::streampos newPos = boost::iostreams::seek( *m_pDevice, off * sizeof( char_type ), way );
-        return newPos / sizeof( char_type );
-    }
-
-protected:
-    void ThrowIfDeviceNull()
-    {
-        if( ! m_pDevice )
-            throw std::runtime_error( "basic_reinterpret_device - no associated device" );
-    }
-
-private:
-    DeviceT* m_pDevice = nullptr;
-};
-
-
-#include <boost/iostreams/categories.hpp>
-#include <boost/iostreams/traits.hpp>
-#include <boost/iostreams/stream.hpp>
-#include <boost/iostreams/stream_buffer.hpp>
-
-struct reinterpret_device_tag : virtual boost::iostreams::source_tag, virtual boost::iostreams::sink_tag {};
-struct reinterpret_source_seekable_tag : boost::iostreams::device_tag, boost::iostreams::input_seekable {};
-struct reinterpret_sink_seekable_tag : boost::iostreams::device_tag, boost::iostreams::output_seekable {};
-
-
-template< typename DeviceT, typename CharT >
-using reinterpret_source = basic_reinterpret_device< boost::iostreams::source_tag, DeviceT, CharT >;
-
-template< typename DeviceT, typename CharT >
-using reinterpret_sink = basic_reinterpret_device< boost::iostreams::sink_tag, DeviceT, CharT >;
-
-template< typename DeviceT, typename CharT >
-using reinterpret_device = basic_reinterpret_device< reinterpret_device_tag, DeviceT, CharT >;
-
-template< typename DeviceT, typename CharT >
-using reinterpret_device_seekable = basic_reinterpret_device< boost::iostreams::seekable_device_tag, DeviceT, CharT >;
-
-template< typename DeviceT, typename CharT >
-using reinterpret_source_seekable = 
-    basic_reinterpret_device< reinterpret_source_seekable_tag, DeviceT, CharT >;
-
-template< typename DeviceT, typename CharT >
-using reinterpret_sink_seekable = 
-    basic_reinterpret_device< reinterpret_sink_seekable_tag, DeviceT, CharT >;
-
-
-template< typename DeviceT >
-using reinterpret_as_wistreambuf = boost::iostreams::stream_buffer< reinterpret_source_seekable< DeviceT, wchar_t > >;
-
-template< typename DeviceT >
-using reinterpret_as_wostreambuf = boost::iostreams::stream_buffer< reinterpret_sink_seekable< DeviceT, wchar_t > >;
-
-template< typename DeviceT >
-using reinterpret_as_wstreambuf = boost::iostreams::stream_buffer< reinterpret_device_seekable< DeviceT, wchar_t > >;
-
-
-template< typename DeviceT >
-using reinterpret_as_wistream = boost::iostreams::stream< reinterpret_source_seekable< DeviceT, wchar_t > >;
-
-template< typename DeviceT >
-using reinterpret_as_wostream = boost::iostreams::stream< reinterpret_sink_seekable< DeviceT, wchar_t > >;
-
-template< typename DeviceT >
-using reinterpret_as_wstream = boost::iostreams::stream< reinterpret_device_seekable< DeviceT, wchar_t > >;
-// template<>
-// class my_wistream_reinterpreter : public wistream<> {
-
+// 	string country() const {
+// 		vector<string> lparts = split(location, '/');
+// 		if (lparts.size() >= 2)
+// 			return trim(lparts[1]);
+// 		return "";
+// 	}
 // };
+
+// struct MetadataReader {
+//     string fn;
+//     ifstream file;
+
+//     MetadataReader(string fn) : fn(fn), file(fn) {
+//     }
+    
+//     int name_index = -1, id_index = -1, date_index = -1, location_index = -1, collection_date_index = -1, location_addition_index = -1, pangolin_index=-1, aasub_index = -1;
+//     string line = "";
+//     Metadata2 metadata;
+//     vector<string> metadata_line_split, metadata_header_line_split;
+//     bool next() {
+//         for (; line != "" || getline(file, line); ) {
+//             while (line.back() == '\r' || line.back() == '\n') 
+//                 line.pop_back();
+//             //cerr << "line read " << line << endl;
+//             if (line.size() == 0) {
+//                 line = "";
+//                 continue;
+//             }
+//             char separator = 0;
+//             if (separator == 0) {
+//                 if (line.find('\t') != string::npos) 
+//                     separator = '\t';
+//                 else if (line.find(',') != string::npos) 
+//                     separator = ',';
+//             }
+//             //vector<string> x = split(trim(line), separator);
+//             vector<string> x = split(line, separator);
+//             //cerr << "line split " << x << endl;
+//             if (id_index == -1) {
+//                 //cerr << "reading header " << x << endl;
+//                 name_index = indexOf(x, {"Virus name", "Virus.name", "virus_name", "sequence_name", "strain"});
+//                 id_index = indexOf(x, {"Accession ID", "Accession.ID", "accession_id", "accession", "sequence_name"});
+//                 date_index = indexOf(x, {"Collection date", "Collection.date", "collection_date", "date"});
+//                 location_index = indexOf(x, {"Location", "country"});
+//                 location_addition_index = indexOf(x, {"Additional.location.information", "Additional location information", "city"});
+//                 //collection_date_index = indexOf(x, {"Submission date"});
+//                 collection_date_index = indexOf(x, {"Collection date", "Collection.date", "collection_date", "date"});
+//                 pangolin_index = indexOf(x, {"Pango lineage", "Pango.lineage", "lineage"});
+//                 // aasub_index = indexOf(x, {"AA Substitutions"});
+//                 line = "";
+//                 //cerr << "header loaded " << x << endl;
+//                 metadata_header_line_split = x;
+//                 continue;
+//             } else {
+//                 if (id_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " id=" << id_index << endl;
+//                 }
+//                 if (name_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " name=" << name_index << endl;
+//                 }
+//                 if (date_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " date_index=" << date_index << endl;
+//                 }
+//                 if (collection_date_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " collection_date_index=" << collection_date_index << endl;
+//                 }
+//                 if (location_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " location_index=" << location_index << endl;
+//                 }
+//                 if (location_addition_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " location_addition_index=" << location_addition_index << " " << x << endl;
+//                 }
+//                 if (pangolin_index >= (int)x.size() ) {
+//                     cerr << "x short " << x.size() << " pangolin_index=" << pangolin_index << endl;
+//                 }
+//                 // if (aasub_index >= (int)x.size() ) {
+//                 //     cerr << "x short " << x.size() << " aasub_index=" << aasub_index << " " << x << endl;
+//                 //     exit(0);
+//                 // }
+
+// 		/*
+// 		for (const auto &y:x) {
+// 			cerr << "|" << y;
+// 		}
+// 		cerr << "|" << endl;
+// 		*/
+
+
+//                 metadata_line_split = x;
+//                 metadata = Metadata2(x[id_index], x[name_index], x[date_index].size() != 10 ? x[collection_date_index] : x[date_index], x[location_index], location_addition_index != -1 ? x[location_addition_index] : "", pangolin_index != -1 ? x[pangolin_index] : "", "");
+//                 line = "";
+
+//                 // if (line.find("EPI_ISL_10046212") != string::npos) {
+//                 //     cerr << "MR EPI_ISL_10046212 found in line " << line << endl;
+//                 // }
+
+//                 // if (x[id_index] == "EPI_ISL_10046212") {
+//                 //     cerr << "MR EPI_ISL_10046212:" << x << " x[id_index]=" << x[id_index] << " metadata.id=" << metadata.id << "|" << endl;
+//                 // }
+
+//                 return true;
+//             }
+//         }
+//         return false;
+//     }
+// };
+
+
 
 int main(int argc, char* argv[]) {
 	//cerr << "main" << endl;
-	// wifstream file(argv[1], ios_base::in | ios_base::binary);
-	// wifstream file(argv[1]);
-	// cerr << "file opened " << argv[1] << endl;
-	// // io::filtering_streambuf<io::input> in;
-	// // //in.push(gzip_decompressor());
-	// // in.push(io::lzma_decompressor());
-	// // in.push(file);
-	// // std::istream incoming(&in);
-	// // std::wistream my_wistream_reinterpreter(incoming);
-	// // reinterpret_as_wistream< std::istream > my_wistream_reinterpreter(incoming);
+	// if (argc != 3) {
+	// 	cerr << "We need two inputs: sequence file and the metadata file" << endl;
+	// 	return 1;
+	// }
+	// TCLAP::CmdLine cmd("Filter fasta sequence or ziped fasta file.", ' ', "0.9");
 
-	// // wistream& file_alignment = endswith(argv[1],".xz") ? my_wistream_reinterpreter : file; 
-	// if (endswith(argv[1],".xz")) {
+	// TCLAP::ValueArg<string> fasta_file("a", "aln", "The fasta file", true, "", "string");
+	// cmd.add(fasta_file);
+
+	// TCLAP::ValueArg<string> metadata_file("m", "metadata", "The metadata file containing the ids to be printed", false, "", "string");
+	// cmd.add(metadata_file);
+
+	// TCLAP::ValueArg<string> ids_file("i", "ids", "A file containing the ids to be printed. Either this or the metadata option should be provided", false, "", "string");
+	// cmd.add(ids_file);
+
+	// cmd.parse( argc, argv );
+
+	argagg::parser argparser {{
+		{ "help", {"-h", "--help"},
+			"shows this help message", 0},
+		{ "metadata", {"-m", "--metadata"},
+			"The metadata file containing the ids to be printed.", 1},
+		{ "ids", {"-i", "--ids"},
+			"A file containing the ids to be printed. Either this or the metadata option should be provided.", 1},
+		{ "aln", {"-a", "--aln"},
+			"The fasta file. If fasta file is compressed (specified with -z), the path inside the compressed file should be provided after the file path separated by a colon. For example sequence-file.tar.xz:folder/seq01.fasta.", 1},
+		{ "zip", {"-z", "--zip"},
+			"The fasta file is compressed.", 0},
+		{ "progress", {"-p", "--progress"},
+			"Show the progress bar.", 0},
+		{ "format", {"-f", "--format"},
+			"Format of the id in the output fasta file. {0}=accession id, {1}=epi name, {2}=date", 1},
+	}};
+
+	argagg::parser_results args;
+
+	try {
+		args = argparser.parse(argc, argv);
+	} catch (const std::exception& e) {
+		std::cerr << "E: " << e.what() << '\n';
+		return EXIT_FAILURE;
+	}
+
+	string metadata_file = "", 
+		fasta_file = "",
+		ids_file = "";
+
+	if (args["metadata"]) {
+		metadata_file = args["metadata"].as<string>();
+	}
+
+	if (args["aln"]) {
+		fasta_file = args["aln"].as<string>();
+	}
+
+	if (args["ids"]) {
+		ids_file = args["ids"].as<string>();
+	}
+
+	string id_format = "{0}";
+	if (args["format"]) {
+		id_format = args["format"].as<string>();
+	}
+
+	bool progress = false;
+	if (args["progress"]) {
+		progress = true;
+	}
+
+
+	assert((metadata_file != "") + (ids_file != "") == 1);
+
+	// wifstream file(argv[1], ios_base::in | ios_base::binary);
+	// int id_index = (argc > 3 ? std::atoi(argv[3])-1 : 0);
+	int id_index = -1;
+	// cerr << "sequence file: '" << fasta_file << "' metadata file: '" << metadata_file << "' ids file: '" <<  ids_file << "'" << endl;
+	// io::filtering_streambuf<io::input> in;
+	// //in.push(gzip_decompressor());
+	// in.push(io::lzma_decompressor());
+	// in.push(file);
+	// std::istream incoming(&in);
+	// std::wistream my_wistream_reinterpreter(incoming);
+	// reinterpret_as_wistream< std::istream > my_wistream_reinterpreter(incoming);
+
+	// wistream& file_alignment = endswith(argv[1],".xz") ? my_wistream_reinterpreter : file; 
+	// if (string(argv[1]).ends_with(".xz")) {
 	// 	cerr << "We don't support xz file " << argv[1] << endl;
 	// }
-	// assert(!endswith(argv[1],".xz"));
+	// assert(!string(argv[1]).ends_with(".xz"));
 	// wistream& file_alignment = file; 
-	ifstream file_alignment(argv[1]);
 
 	vector<string> sample_ids;
-	ifstream fi(argv[2]);
-	for (string line; getline(fi, line); ) {
-		if (line != "") {
-			sample_ids.push_back(line);
-			//cerr << "id=(" << line << ")" << endl;
+
+	if (metadata_file != "") {
+		cerr << "Loading IDs from metadata file: " << metadata_file << endl;
+		for (MetadataReader mr(metadata_file); mr.next(); ) {
+			sample_ids.push_back(mr.metadata.id);
+			if (!mr.metadata.id.starts_with("EPI_ISL_")) {
+				cerr << "W invalid id in metadata: " << mr.metadata.id << endl;
+			}
 		}
 	}
-	cerr << "sample_ids loaded " << sample_ids.size() << " id-index=" << (argc > 3 ? std::atoi(argv[3])-1 : 0) << endl;
+
+	if (ids_file != "") {
+		cerr << "Loading IDs from id file: " << ids_file << endl;
+		ifstream fi(ids_file);
+		for (string line; getline(fi, line); ) {
+			if (line != "") {
+				if (!line.starts_with("EPI_ISL_")) {
+					cerr << "W invalid id in metadata: " << line << endl;
+				}
+				sample_ids.push_back(line);
+				//cerr << "id=(" << line << ")" << endl;
+			}
+		}
+	}
+
+	set<string> samples(sample_ids.begin(), sample_ids.end()), samples_found;
+
+	cerr << "sample_ids loaded " << sample_ids.size() << " id-index=" << id_index << " [";
 	for (int i=0; i<(int)sample_ids.size() && i <= 5; i++) {
 		cerr << "'" << sample_ids[i] << "' ";
 	}
-	cerr << endl;
+	cerr << " ... ]" << endl;
 
-	set<string> samples(sample_ids.begin(), sample_ids.end()), samples_found;
-	FastaLoaderSequenceFilterIdIndex filter(cout, samples, argc > 3 ? std::atoi(argv[3])-1 : 0, true);
+	FastaLoaderSequenceFilterIdIndex filter(cout, samples, id_index, progress, id_format);
 	FastaLoader<FastaLoaderSequenceFilterIdIndex> fastaLoader(filter);
-	fastaLoader.load(file_alignment);
-	cerr << endl;
-	cerr << " info: lines="  << fastaLoader.line_count << " records=" << fastaLoader.record_count << endl;
+	if (args["zip"]) {
+		vector<string> x = split_string(fasta_file, ':');
+		assert(x.size() == 2);
+		cerr << "Loading sequences from compressed fasta file: '" << x[0] << "' inside path: '" << x[1] << "'" << endl;
+		TarXZReader file_alignment;
+		file_alignment.open(x[0]);
+		file_alignment.seekFile(x[1]);
+		fastaLoader.filter.file_size = file_alignment.current_file_size;
+		// cerr << "filter.file_size=" << filter.file_size << endl;
+		fastaLoader.load(file_alignment);
+		// cerr << "filter.file_size=" << filter.file_size << endl;
+		file_alignment.close();
+	} else {
+		cerr << "Loading sequences from raw fasta file: '" << fasta_file << "'" << endl;
+		auto size = std::filesystem::file_size(fasta_file);
+		fastaLoader.filter.file_size = size;
+		ifstream file_alignment(fasta_file);
+		fastaLoader.load(file_alignment);
+	}
+	cerr << "Loading done." << endl;
 
-	cerr << "saved " << fastaLoader.filter.samples_found.size() << " samples " << endl;
+	cerr << "Saved " << fastaLoader.filter.samples_found.size() << " samples " << endl;
 	cerr << "  duplicate samples in fasta file: " << fastaLoader.filter.dup_count << endl;
 	cerr << "  not found samples in fasta file: ";
 	int samples_notfount_count = 0;
 	for (auto const& s:samples) {
 		if (fastaLoader.filter.samples_found.find(s) == fastaLoader.filter.samples_found.end()) {
 			if (samples_notfount_count < 10)
-				cerr <<  s << " ";
+				cerr << s << " ";
 			samples_notfount_count++;
 		}
 	}
 	if (samples_notfount_count > 0) {
 		cerr << " (" << samples_notfount_count << " samples)" << endl;
 	}
-
-
+	cerr << endl;
+	
 	return 0;
 }
