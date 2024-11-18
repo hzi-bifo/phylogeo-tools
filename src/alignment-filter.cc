@@ -463,6 +463,11 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
+	if (args["help"]) {
+		std::cerr << argparser;
+		return EXIT_SUCCESS;
+	}
+
 	string metadata_file = "", 
 		fasta_file = "",
 		ids_file = "";
