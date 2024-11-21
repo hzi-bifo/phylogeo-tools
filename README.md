@@ -51,6 +51,10 @@ Following is an example of running the tool on the example data.
 bin/alignment-filter -a example/3/a.aln -i example/3/ids.txt -f "{1}|{2}|{0}" -p > out
 ```
 
+Instead of filtering by ids, the fasta file could be filtered with names (the item starting with "hCov-19/..."). For that `-by name` should be added to the arguments.
+
+If the items we want to be printed in the description of each sequence is not provided in the fasta file, it could be extracted from the metadata file. For this `-d metadata` should be added to the arguments.
+
 
 ## Build mutation samples files
 Given a tree file and an alignment, we can infer internal node's genomic sequences. Then based on these sequences
