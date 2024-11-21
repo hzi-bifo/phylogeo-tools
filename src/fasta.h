@@ -56,7 +56,7 @@ struct FastaLoader {
 		// std::cerr << "LOAD: " << filter.file_size << " " << std::endl;
 		filter.clear();
 		std::string seq, id, raw_id;
-		for (std::string wline; getline(file_alignment, wline); ) {
+		for (std::string line; getline(file_alignment, line); ) {
 			//cerr << "L " << line << endl;
 			// if (wline.find(L"EPI_ISL_1001837") != wstring::npos) {
 			// 	cerr << "D Found EPI_ISL_1001837! " << to_string(wline) << endl;
@@ -64,13 +64,13 @@ struct FastaLoader {
 			// cerr << "L '" << to_string(wline) << "'" << endl;
 			// std::cerr << "Stream is in a fail=" << file_alignment.fail() << " bad=" << file_alignment.bad() << " good=" << file_alignment.good() << " eof=" << file_alignment.eof()<< " rdstate=" << file_alignment.rdstate() << " state." << std::endl;
 
-			string line = to_string(wline);
+			// string line = to_string(wline);
 			// if (line.find("EPI_ISL_1001837") != string::npos) {
 			// 	cerr << "D Found EPI_ISL_1001837! S: " << line << endl;
 			// }
 			if (line.size() == 0) continue;
 			if (line[0] == '>') {
-				if (id != "") {
+				if (id.size() > 0) {
 					filter.process(id, seq, raw_id, file_alignment);
 					record_count++;
 				}
@@ -81,12 +81,18 @@ struct FastaLoader {
 				seq = "";
 				//cerr << "new id (" << id << ") " << id.size() << endl;
 			} else {
-				seq += line;
+				if (seq.size() == 0)
+					seq = line;
+				else
+					seq += line;
 			}
+			// if (line_count % 100000 == 0) {
+			// 	filter.process(id, seq, raw_id, file_alignment);
+			// }
 			line_count++;
 
-			// //TODO: DEBUG
-			// if (line_count > 1000000) {
+			//TODO: DEBUG
+			// if (line_count > 100000000) {
 			// 	break;
 			// }
 		}

@@ -36,7 +36,7 @@ $(BIN)/tree-stat: $(SRC)/tree-stat.cc $(SRC)/tree.h
 	g++ -o $@ $(SRC)/tree-stat.cc -O0 -Wall -std=c++11 -lboost_program_options
 
 $(BIN)/alignment-filter: $(SRC)/alignment-filter.cc $(SRC)/fasta.h $(SRC)/metadata.h $(SRC)/tarxz-reader.h
-	g++ -o $@ $(SRC)/alignment-filter.cc -O3 -Wall -std=c++20 -I$(CONDA_PREFIX)/include -L$(CONDA_PREFIX)/lib -Wl,-rpath-link=$(CONDA_PREFIX)/lib -llzma -larchive
+	g++ -o $@ $(SRC)/alignment-filter.cc -O6 -Wall -std=c++20 -I$(CONDA_PREFIX)/include -L$(CONDA_PREFIX)/lib -Wl,-rpath-link=$(CONDA_PREFIX)/lib -llzma -larchive
 
 $(BIN)/partition-by-name: $(SRC)/partition-by-name.cc $(SRC)/tree.h
 	g++ -o $@ $(SRC)/partition-by-name.cc -O0 -Wall -std=c++11 -lboost_iostreams  -I$(CONDA_PREFIX)/include -lboost_program_options

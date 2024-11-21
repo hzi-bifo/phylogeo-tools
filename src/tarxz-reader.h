@@ -11,7 +11,7 @@
 class TarXZReader {
 private:
     struct archive *a = nullptr;
-    std::string line_buffer;
+    std::deque<char> line_buffer;
     bool eof = true;
 
 public:
@@ -48,6 +48,7 @@ public:
         }
     }
 
+    int last_no_eol_pos = 0;
     // Seek into a specific file inside the archive
     bool seekFile(const std::string &filePath) {
         struct archive_entry *entry;
@@ -68,6 +69,8 @@ public:
                 current_file_size = archive_entry_size(entry);
                 // std::cerr << archive_entry_pathname(entry) << " " << "size=" << current_file_size << std::endl;
                 if (archive_entry_pathname(entry) == filePath) {
+                    line_buffer.clear();
+                    last_no_eol_pos = 0;
                     eof = false;
                     return true;
                 }
@@ -79,12 +82,20 @@ public:
     // Read the next line from the currently selected file
     bool getline(std::string &line) {
 
+        // TODO: we will have problem with files without \n at the end!
         for (; !eof;) {
-            size_t pos = line_buffer.find('\n');
-            if (pos != std::string::npos) {
-                line = line_buffer.substr(0, pos);
-                line_buffer.erase(0, pos + 1);
+            auto pos = std::find(line_buffer.begin() + last_no_eol_pos, line_buffer.end(), '\n');
+            // std::cerr << "R.gl " << (pos - line_buffer.begin()) << "/" << line_buffer.size() << " " << last_no_eol_pos << std::endl;
+            if (pos != line_buffer.end()) {
+                // line = line_buffer.substr(0, pos);
+                line = std::string(line_buffer.begin(), pos);
+                // line = ">hCoV-19/A/A/B|2021-01-01";
+                // line_buffer.erase(0, pos + 1);
+                line_buffer.erase(line_buffer.begin(), pos+1);
+                last_no_eol_pos = 0;
                 return true;
+            } else {
+                last_no_eol_pos = line_buffer.end() - line_buffer.begin();
             }
 
             const void *buff;
@@ -94,7 +105,10 @@ public:
             current_file_offset = offset;
             // std::cerr << "R " << size << " " << offset << " " << r << std::endl;
             if (r == ARCHIVE_OK && size > 0) {
-                line_buffer.append((char*)buff, size);
+                // line_buffer.append((char*)buff, size);
+                // for (size_t s = 0; s < size; s++)
+                //     line_buffer.push_back(static_cast<const char*>(buff)[s]);
+                line_buffer.insert(line_buffer.end(), static_cast<const char*>(buff), static_cast<const char*>(buff)+size);
                 continue;
             }
             if (r == ARCHIVE_EOF || (r == ARCHIVE_OK && size == 0)) {

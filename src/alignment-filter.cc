@@ -83,6 +83,11 @@ int indexOf(const vector<string> v, const std::initializer_list<string>& keys) {
 
 #include "metadata.h"
 
+const int SELECTION_BY_ID = 1;
+const int SELECTION_BY_NAME = 2;
+
+const int OUTPUT_SEQUENCE_HEADER_SOURCE_SEQUENCE_FILE = 1;
+const int OUTPUT_SEQUENCE_HEADER_SOURCE_METADATA_FILE = 2;
 
 
 struct FastaLoaderSequenceFilterIdIndex {
@@ -93,9 +98,12 @@ struct FastaLoaderSequenceFilterIdIndex {
 	const std::set<std::string>& samples;
 
 	int id_index;
-	bool progress;
+	int selection_by;
+	int output_sequence_header_source;
+	const map<string, Metadata2>& metadata_by_id;
 
 	// {0} = epi, {1} = name, {2} = date
+	bool progress;
 	string format_template;
 
 	int64_t file_size = -1;
@@ -103,8 +111,15 @@ struct FastaLoaderSequenceFilterIdIndex {
 	FastaLoaderSequenceFilterIdIndex(std::ostream& os, 
 		const std::set<std::string>& samples, 
 		int id_index, 
+		int selection_by,
+		int output_sequence_header_source,
+		const map<string, Metadata2>& metadata_by_id,
 		bool progress = false, 
-		const string& format_template = "{0}") : os(os), samples(samples), id_index(id_index), progress(progress), format_template(format_template) {
+		const string& format_template = "{0}") : os(os), samples(samples), id_index(id_index), 
+			selection_by(selection_by),
+			output_sequence_header_source(output_sequence_header_source),
+			metadata_by_id(metadata_by_id),
+			progress(progress), format_template(format_template) {
 	}
 
 	void clear() {
@@ -113,35 +128,58 @@ struct FastaLoaderSequenceFilterIdIndex {
 		assert(id_index == -1);
 	}
 
+
 	std::string id_printable(const std::string& raw_id) const {
-		vector<string> x = split(raw_id, '|');
-		string epi = "", name = "", date = "";
-	    std::regex year_regex("^([0-9]{4})");
-		for (const auto& xx : x) {
-			if (xx.starts_with("EPI_ISL_")) {
-				epi = xx;
+		if (output_sequence_header_source == OUTPUT_SEQUENCE_HEADER_SOURCE_SEQUENCE_FILE) {
+			vector<string> x = split(raw_id, '|');
+			string epi = "", name = "", date = "";
+			std::regex year_regex("^([0-9]{4})");
+			for (const auto& xx : x) {
+				if (xx.starts_with("EPI_ISL_")) {
+					epi = xx;
+				}
+				if (std::sregex_iterator(xx.begin(), xx.end(), year_regex) != std::sregex_iterator()) {
+					date = xx;
+				}
+				if (xx.starts_with("hCoV-19/")) {
+					vector<string> xxx = split(xx, '/');
+					if (xxx.size() >= 3) {
+						name = xxx[xxx.size()-3] + '/' + xxx[xxx.size()-2] + '/' + xxx[xxx.size()-1];
+					}
+				}
 			}
-			if (std::sregex_iterator(xx.begin(), xx.end(), year_regex) != std::sregex_iterator()) {
-				date = xx;
+
+			// if (name == "" || epi == "" || date == "") {
+			// 	cerr << "E id-format '" << raw_id << "' " << name << " " << epi << " " << date << endl;
+			// }
+
+			return std::vformat(format_template, std::make_format_args(epi, name, date));
+
+			// return name + "|" + epi + "|" + date;
+		} else if (output_sequence_header_source == OUTPUT_SEQUENCE_HEADER_SOURCE_METADATA_FILE) {
+			string id_ = id(raw_id);
+			auto metadata_it = metadata_by_id.find(id_);
+			if (metadata_it == metadata_by_id.end()) {
+				cerr << "ID not found in metadata information: '" << id_ << "'" << std::endl;
+				return raw_id;
 			}
-			if (xx.starts_with("hCoV-19/")) {
-				vector<string> xxx = split(xx, '/');
+			string epi = metadata_it->second.id,
+				name = metadata_it->second.name,
+				date = metadata_it->second.date;
+			if (name.starts_with("hCoV-19/")) {
+				vector<string> xxx = split(name, '/');
 				if (xxx.size() >= 3) {
 					name = xxx[xxx.size()-3] + '/' + xxx[xxx.size()-2] + '/' + xxx[xxx.size()-1];
 				}
 			}
+			return std::vformat(format_template, std::make_format_args(epi, name, date));
+		} else {
+			std::cerr << "Invalid output_sequence_header_source = " << output_sequence_header_source << std::endl;
+			exit(1);
 		}
-
-		if (name == "" || epi == "" || date == "") {
-			cerr << "E id-format '" << raw_id << "' " << name << " " << epi << " " << date << endl;
-		}
-
-		return std::vformat(format_template, std::make_format_args(epi, name, date));
-
-		// return name + "|" + epi + "|" + date;
 	}
 
-	std::string id(const std::string& raw_id) {
+	std::string id(const std::string& raw_id) const {
 		// const char* search_template = "EPI_ISL_";
 		// const int template_length = 8;
 		// string ret;
@@ -171,10 +209,13 @@ struct FastaLoaderSequenceFilterIdIndex {
 		// }
 		if (id_index == -1) {
 			for (const auto& xx : x) {
-				if (xx.starts_with("EPI_ISL_")) {
+				if (selection_by == SELECTION_BY_ID && xx.starts_with("EPI_ISL_")) {
 					// if (xx == "EPI_ISL_1001837") {
 					// 	cerr << "D Found! " << x << " " << xx << endl;
 					// }
+					return xx;
+				}
+				if (selection_by == SELECTION_BY_NAME && xx.starts_with("hCoV-19/")) {
 					return xx;
 				}
 			}
@@ -284,8 +325,9 @@ struct FastaLoaderSequenceFilterIdIndex {
 		}
 		count++;
 		// cerr << "}'" << id << "'" << seq.size() << endl;
-		if (samples.find(id) != samples.end()) {
-			if (samples_found.find(id) != samples_found.end()) {
+		if (samples.contains(id)) {
+		// if (false) {
+			if (samples_found.contains(id)) {
 				//cerr << "dup " << id << endl;
 				dup_count++;
 			} else {
@@ -444,6 +486,8 @@ int main(int argc, char* argv[]) {
 			"The metadata file containing the ids to be printed.", 1},
 		{ "ids", {"-i", "--ids"},
 			"A file containing the ids to be printed. Either this or the metadata option should be provided.", 1},
+		{ "by", {"-b", "--by"},
+			"Select by. Options: 'id' which is EPI_ISL ID (default) or 'name' which is Virus name.", 1},
 		{ "aln", {"-a", "--aln"},
 			"The fasta file. If fasta file is compressed (specified with -z), the path inside the compressed file should be provided after the file path separated by a colon. For example sequence-file.tar.xz:folder/seq01.fasta.", 1},
 		{ "zip", {"-z", "--zip"},
@@ -451,7 +495,9 @@ int main(int argc, char* argv[]) {
 		{ "progress", {"-p", "--progress"},
 			"Show the progress bar.", 0},
 		{ "format", {"-f", "--format"},
-			"Format of the id in the output fasta file. {0}=accession id, {1}=epi name, {2}=date", 1},
+			"Format of the sequence descriptions of the output fasta file. {0}=accession id, {1}=epi name, {2}=date", 1},
+		{ "desc", {"-d", "--desc"},
+			"Source of information for sequence description information, i.e. the part appears after '>'. Options: 'seq' from sequence file (default) or 'metadata' from metadata file.", 1},
 	}};
 
 	argagg::parser_results args;
@@ -494,6 +540,32 @@ int main(int argc, char* argv[]) {
 		progress = true;
 	}
 
+	int selection_by = SELECTION_BY_ID;
+	if (args["by"]) {
+		string selection_by_string = args["by"].as<string>();
+		if (selection_by_string == "id") {
+			selection_by = SELECTION_BY_ID;
+		} else if (selection_by_string == "name") {
+			selection_by = SELECTION_BY_NAME;
+		} else {
+			std::cerr << "Invalid selection by argument: '" << selection_by_string << "'" << std::endl;
+			exit(1);
+		}
+	}
+
+	int output_sequence_header_source = OUTPUT_SEQUENCE_HEADER_SOURCE_SEQUENCE_FILE;
+	if (args["desc"]) {
+		string oheader_string = args["desc"].as<string>();
+		if (oheader_string == "seq") {
+			output_sequence_header_source = OUTPUT_SEQUENCE_HEADER_SOURCE_SEQUENCE_FILE;
+		} else if (oheader_string == "metadata") {
+			output_sequence_header_source = OUTPUT_SEQUENCE_HEADER_SOURCE_METADATA_FILE;
+		} else {
+			std::cerr << "Invalid output sequence header argument: '" << oheader_string << "'" << std::endl;
+			exit(1);
+		}
+	}
+
 
 	assert((metadata_file != "") + (ids_file != "") == 1);
 
@@ -517,11 +589,19 @@ int main(int argc, char* argv[]) {
 	// wistream& file_alignment = file; 
 
 	vector<string> sample_ids;
+	map<string, Metadata2> metadata_by_id;
 
 	if (metadata_file != "") {
 		cerr << "Loading IDs from metadata file: " << metadata_file << endl;
 		for (MetadataReader mr(metadata_file); mr.next(); ) {
-			sample_ids.push_back(mr.metadata.id);
+
+			if (selection_by == SELECTION_BY_ID) {
+				sample_ids.push_back(mr.metadata.id);
+				metadata_by_id[mr.metadata.id] = mr.metadata;
+			} else if (selection_by == SELECTION_BY_NAME) {
+				sample_ids.push_back(mr.metadata.name);
+				metadata_by_id[mr.metadata.name] = mr.metadata;
+			}
 			if (!mr.metadata.id.starts_with("EPI_ISL_")) {
 				cerr << "W invalid id in metadata: " << mr.metadata.id << endl;
 			}
@@ -550,7 +630,7 @@ int main(int argc, char* argv[]) {
 	}
 	cerr << " ... ]" << endl;
 
-	FastaLoaderSequenceFilterIdIndex filter(cout, samples, id_index, progress, id_format);
+	FastaLoaderSequenceFilterIdIndex filter(cout, samples, id_index, selection_by, output_sequence_header_source, metadata_by_id, progress, id_format);
 	FastaLoader<FastaLoaderSequenceFilterIdIndex> fastaLoader(filter);
 	if (args["zip"]) {
 		vector<string> x = split_string(fasta_file, ':');
