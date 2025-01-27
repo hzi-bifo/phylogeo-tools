@@ -1,3 +1,6 @@
+#ifndef __TREE_H__
+#define __TREE_H__
+
 #include <iostream>
 #include <ostream>
 #include <fstream>
@@ -10,84 +13,9 @@
 #include <regex>
 #include <list>
 #include <array>
+#include "utils.h"
+#include "mutation.h"
 using namespace std;
-
-template<typename T, typename S>
-ostream& operator<<(ostream& os, const pair<T,S>& p) {
-        return os << "[" << p.first << "," << p.second << "]";
-}
-
-template<typename T>
-ostream& operator<<(ostream& os, const vector<T>& v) {
-	os << "[";
-	for (auto const &i: v)
-		os << i << " ";
-	return os << "]";
-}
-
-template<typename T, size_t L>
-ostream& operator<<(ostream& os, const array<T, L>& v) {
-	os << "[";
-	for (auto const &i: v)
-		os << i << " ";
-	return os << "]";
-}
-
-template<typename T, typename S>
-ostream& operator<<(ostream& os, const map<T,S>& v) {
-	os << "[";
-	for (auto const &i: v)
-		os << i.first <<":" << i.second << " ";
-	return os << "]";
-}
-
-bool endswith(const string& s, const string& e) {
-	if (s.size() < e.size()) return false;
-	for (size_t i = s.size() - e.size(), j=0; j < e.size(); i++, j++) {
-		if (s[i] != e[j]) return false;
-	}
-	return true;
-}
-
-bool iequals(const string& a, const string& b) {
-	for (size_t i = 0, j = 0; i < a.size() || j < b.size(); ) {
-		if (i < a.size() && isspace(a[i])) {
-			i++;
-		} else if (j < b.size() && isspace(b[j])) {
-			j++;
-		} else if (i < a.size() && j < b.size() && tolower(a[i]) == tolower(b[j])) {
-			i++;
-			j++;
-		} else {
-			return false;
-		}
-	}
-	return true;
-}
-
-std::string trim(const std::string& str,
-                 const std::string& whitespace = " \t\n\r")
-{
-    const auto strBegin = str.find_first_not_of(whitespace);
-    if (strBegin == std::string::npos)
-        return ""; // no content
-
-    const auto strEnd = str.find_last_not_of(whitespace);
-    const auto strRange = strEnd - strBegin + 1;
-
-    string r = str.substr(strBegin, strRange);
-    //cerr << "trim " << r << endl;
-    return r;
-}
-
-vector<string> split(const string& l, char splitter = '\t') {
-	vector<string> x;
-	std::istringstream iss(l);
-	for (string token; getline(iss, token, splitter); ) {
-		x.push_back(token);
-	}
-	return x;
-}
 
 
 istream& seek_spaces(istream& is, char space = ' ') {
@@ -205,6 +133,8 @@ struct Node {
 		label = read_name(is);
 		annotation = read_annotation(is);
 		branch_length = read_branch_length(is);
+        if (annotation == "") // in some trees, like treetime, they put annotation after branch_length
+		    annotation = read_annotation(is);
 		edge_label = read_edge_label(is);
 		//
 		//if (label == "EPI_ISL_1142103") {
@@ -340,11 +270,14 @@ struct Node {
 		return r;
 	}
 
-	void set_tip_location(const map<string, STATE>& isolate_matrix) {
+	void set_tip_location(const map<string, STATE>& isolate_matrix, bool tip_with_no_location_warning, vector<string>& tip_with_no_location_list) {
 		for (auto &n: children)
-			n.set_tip_location(isolate_matrix);
+			n.set_tip_location(isolate_matrix, tip_with_no_location_warning, tip_with_no_location_list);
 		if (!(children.size() > 0 || isolate_matrix.find(label) != isolate_matrix.end())) {
-			cerr << "W TIP with no location " << label << " " << endl;
+            if (tip_with_no_location_warning) {
+                tip_with_no_location_list.push_back(label);
+    			// cerr << "W TIP with no location " << label << " " << endl;
+            }
 			location = STATE::def;
 			return;
 		}
@@ -618,16 +551,6 @@ NODE load_tree(string fn) {
 	return n;
 }
 
-int indexOf(const vector<string> v, const std::initializer_list<string>& keys) {
-	for (auto const &k : keys) {
-		if ( find(v.begin(), v.end(), k) != v.end())
-			return find(v.begin(), v.end(), k) - v.begin();
-	}
-	cerr << "Warning: not found indexOf "  << v << " " << vector<string>(keys.begin(), keys.end()) << endl;
-	//assert(1 != 1);
-	return -1;
-}
-
 map<string, Metadata> load_map(istream& fi) {
 	map<string, Metadata> ret;
 	int name_index = -1, id_index = -1, date_index = -1, location_index = -1, collection_date_index = -1, location_addition_index = -1, pangolin_index=-1;
@@ -646,21 +569,32 @@ map<string, Metadata> load_map(istream& fi) {
 		vector<string> x = split(trim(l), separator);
 		if (name_index == -1) {
 			//cerr << "metadata first line " << l << endl;
-			name_index = indexOf(x, {"Virus name", "Virus.name", "virus_name", "sequence_name"});
-			id_index = indexOf(x, {"Accession ID", "Accession.ID", "accession_id", "sequence_name"});
-			date_index = indexOf(x, {"Collection date", "Collection.date", "collection_date", "sample_date"});
-			location_index = indexOf(x, {"Location", "country"});
+			name_index = indexOf(x, {"Virus name", "Virus.name", "virus_name", "sequence_name", "virus name"});
+			id_index = indexOf(x, {"Accession ID", "Accession.ID", "accession_id", "sequence_name", "accession"});
+			date_index = indexOf(x, {"Collection date", "Collection.date", "collection_date", "sample_date", "date"});
+			location_index = indexOf(x, {"Location", "country", "location"});
 			location_addition_index = indexOf(x, {"Additional.location.information", "Additional location information"});
 			//collection_date_index = indexOf(x, {"Submission date"});
 			collection_date_index = indexOf(x, {"Collection date", "Collection.date", "sample_date"});
-			pangolin_index = indexOf(x, {"Pango lineage", "Pango.lineage"});
+			pangolin_index = indexOf(x, {"Pango lineage", "Pango.lineage", "pango lineage"});
 			//cerr << "metadata first line " << name_index << " " << id_index << " " << date_index << " " << location_index << " " << location_addition_index << " " << collection_date_index << endl;
 		} else {
 			//cerr << "META " << x[id_index] << " " << x[name_index] << " " << x[date_index] << " " << x[location_index] << endl;
 			//if (x[id_index] == "EPI_ISL_860761") {
 			//	cerr << "META " << x[id_index] << " " << x[name_index] << " " << x[date_index] << " " << x[location_index] << " " << x[collection_date_index] << endl;
 			//}
-			ret[x[id_index]] = Metadata(x[id_index], x[name_index], x[date_index].size() != 10 ? x[collection_date_index] : x[date_index], x[location_index], location_addition_index != -1 ? x[location_addition_index] : "", pangolin_index != -1 ? x[pangolin_index] : "");
+            try {
+
+                assert(id_index != -1);
+                assert(name_index != -1);
+                assert(date_index != -1);
+                assert(collection_date_index != -1);
+                assert(location_index != -1);
+                ret[x[id_index]] = Metadata(x[id_index], x[name_index], x[date_index].size() != 10 ? x[collection_date_index] : x[date_index], x[location_index], location_addition_index != -1 ? x[location_addition_index] : "", pangolin_index != -1 ? x[pangolin_index] : "");
+            } catch (const std::bad_alloc& e) {
+                std::cout << "Allocation failed: " << e.what() << " x=" << x << " l=" << l << '\n';
+                throw e;
+            }
 		}
 	}
 	return ret;
@@ -1147,3 +1081,4 @@ void save_nexus_tree(ostream& os, const NODE& n, bool print_internal_taxa = fals
 	   << "End;" << endl;
 }
 
+#endif

@@ -17,69 +17,69 @@
 
 using namespace std;
 
-template<typename T, typename S>
-ostream& operator<<(ostream& os, const pair<T,S>& p) {
-        return os << "[" << p.first << "," << p.second << "]";
-}
+// template<typename T, typename S>
+// ostream& operator<<(ostream& os, const pair<T,S>& p) {
+//         return os << "[" << p.first << "," << p.second << "]";
+// }
 
-template<typename T>
-ostream& operator<<(ostream& os, const vector<T>& v) {
-	os << "[";
-	for (auto const &i: v)
-		os << i << " ";
-	return os << "]";
-}
+// template<typename T>
+// ostream& operator<<(ostream& os, const vector<T>& v) {
+// 	os << "[";
+// 	for (auto const &i: v)
+// 		os << i << " ";
+// 	return os << "]";
+// }
 
-template<typename T, size_t L>
-ostream& operator<<(ostream& os, const array<T, L>& v) {
-	os << "[";
-	for (auto const &i: v)
-		os << i << " ";
-	return os << "]";
-}
+// template<typename T, size_t L>
+// ostream& operator<<(ostream& os, const array<T, L>& v) {
+// 	os << "[";
+// 	for (auto const &i: v)
+// 		os << i << " ";
+// 	return os << "]";
+// }
 
-template<typename T, typename S>
-ostream& operator<<(ostream& os, const map<T,S>& v) {
-	os << "[";
-	for (auto const &i: v)
-		os << i.first <<":" << i.second << " ";
-	return os << "]";
-}
+// template<typename T, typename S>
+// ostream& operator<<(ostream& os, const map<T,S>& v) {
+// 	os << "[";
+// 	for (auto const &i: v)
+// 		os << i.first <<":" << i.second << " ";
+// 	return os << "]";
+// }
 
 
-vector<string> split(const string& l, char splitter = '\t') {
-	vector<string> x;
-	std::istringstream iss(l);
-	for (string token; getline(iss, token, splitter); ) {
-		x.push_back(token);
-	}
-	return x;
-}
+// vector<string> split(const string& l, char splitter = '\t') {
+// 	vector<string> x;
+// 	std::istringstream iss(l);
+// 	for (string token; getline(iss, token, splitter); ) {
+// 		x.push_back(token);
+// 	}
+// 	return x;
+// }
 
-std::string trim(const std::string& str,
-                 const std::string& whitespace = " \t\n\r")
-{
-    const auto strBegin = str.find_first_not_of(whitespace);
-    if (strBegin == std::string::npos)
-        return ""; // no content
+// std::string trim(const std::string& str,
+//                  const std::string& whitespace = " \t\n\r")
+// {
+//     const auto strBegin = str.find_first_not_of(whitespace);
+//     if (strBegin == std::string::npos)
+//         return ""; // no content
 
-    const auto strEnd = str.find_last_not_of(whitespace);
-    const auto strRange = strEnd - strBegin + 1;
+//     const auto strEnd = str.find_last_not_of(whitespace);
+//     const auto strRange = strEnd - strBegin + 1;
 
-    string r = str.substr(strBegin, strRange);
-    //cerr << "trim " << r << endl;
-    return r;
-}
+//     string r = str.substr(strBegin, strRange);
+//     //cerr << "trim " << r << endl;
+//     return r;
+// }
 
-int indexOf(const vector<string> v, const std::initializer_list<string>& keys) {
-	for (auto const &k : keys) {
-		if ( std::find(v.begin(), v.end(), k) != v.end())
-			return find(v.begin(), v.end(), k) - v.begin();
-	}
-	cerr << "Warning: not found indexOf "  << v << " " << vector<string>(keys.begin(), keys.end()) << endl;
-	//assert(1 != 1);
-	return -1;
-}
+// int indexOf(const vector<string> v, const std::initializer_list<string>& keys) {
+// 	for (auto const &k : keys) {
+// 		if ( std::find(v.begin(), v.end(), k) != v.end())
+// 			return find(v.begin(), v.end(), k) - v.begin();
+// 	}
+// 	cerr << "Warning: not found indexOf "  << v << " " << vector<string>(keys.begin(), keys.end()) << endl;
+// 	//assert(1 != 1);
+// 	return -1;
+// }
 
 #include "metadata.h"
 
@@ -498,6 +498,8 @@ int main(int argc, char* argv[]) {
 			"Format of the sequence descriptions of the output fasta file. {0}=accession id, {1}=epi name, {2}=date", 1},
 		{ "desc", {"-d", "--desc"},
 			"Source of information for sequence description information, i.e. the part appears after '>'. Options: 'seq' from sequence file (default) or 'metadata' from metadata file.", 1},
+		{ "out", {"-o", "--out"},
+			"Output file.", 1},
 	}};
 
 	argagg::parser_results args;
@@ -516,7 +518,8 @@ int main(int argc, char* argv[]) {
 
 	string metadata_file = "", 
 		fasta_file = "",
-		ids_file = "";
+		ids_file = "", 
+        out_file = "";
 
 	if (args["metadata"]) {
 		metadata_file = args["metadata"].as<string>();
@@ -566,6 +569,9 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	if (args["out"]) {
+		out_file = args["out"].as<string>();
+	}
 
 	assert((metadata_file != "") + (ids_file != "") == 1);
 
@@ -592,6 +598,7 @@ int main(int argc, char* argv[]) {
 	map<string, Metadata2> metadata_by_id;
 
 	if (metadata_file != "") {
+        int w_count = 0;
 		cerr << "Loading IDs from metadata file: " << metadata_file << endl;
 		for (MetadataReader mr(metadata_file); mr.next(); ) {
 
@@ -603,23 +610,42 @@ int main(int argc, char* argv[]) {
 				metadata_by_id[mr.metadata.name] = mr.metadata;
 			}
 			if (!mr.metadata.id.starts_with("EPI_ISL_")) {
-				cerr << "W invalid id in metadata: " << mr.metadata.id << endl;
+                if (w_count <= 10) {
+    				cerr << "W invalid id in metadata: " << mr.metadata.id << endl;
+                    if (w_count == 10) {
+                        cerr << "W invalid id in metadata: limit exceeds " << endl;
+                    }
+                }
+                w_count++;
 			}
 		}
+        if (w_count > 10) {
+            cerr << "W invalid id in metadata count " << w_count << endl;
+        }
 	}
 
 	if (ids_file != "") {
+        int w_count = 0;
 		cerr << "Loading IDs from id file: " << ids_file << endl;
 		ifstream fi(ids_file);
 		for (string line; getline(fi, line); ) {
 			if (line != "") {
 				if (!line.starts_with("EPI_ISL_")) {
-					cerr << "W invalid id in metadata: " << line << endl;
+                    if (w_count <= 10) {
+    					cerr << "W invalid id in ids: " << line << endl;
+                        if (w_count == 10) {
+    					    cerr << "W invalid id in ids limit exceeds " << endl;
+                        }
+                    }
+                    w_count++;
 				}
 				sample_ids.push_back(line);
 				//cerr << "id=(" << line << ")" << endl;
 			}
 		}
+        if (w_count > 10) {
+            cerr << "W invalid id in ids count " << w_count << endl;
+        }
 	}
 
 	set<string> samples(sample_ids.begin(), sample_ids.end()), samples_found;
@@ -630,7 +656,13 @@ int main(int argc, char* argv[]) {
 	}
 	cerr << " ... ]" << endl;
 
-	FastaLoaderSequenceFilterIdIndex filter(cout, samples, id_index, selection_by, output_sequence_header_source, metadata_by_id, progress, id_format);
+    ofstream fo;
+    if (out_file != "") {
+        fo.open(out_file);
+    }
+    ostream& of = (out_file != "") ? fo : cout;
+
+	FastaLoaderSequenceFilterIdIndex filter(of, samples, id_index, selection_by, output_sequence_header_source, metadata_by_id, progress, id_format);
 	FastaLoader<FastaLoaderSequenceFilterIdIndex> fastaLoader(filter);
 	if (args["zip"]) {
 		vector<string> x = split_string(fasta_file, ':');

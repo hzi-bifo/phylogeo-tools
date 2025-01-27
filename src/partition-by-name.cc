@@ -7,11 +7,13 @@
 
 namespace po = boost::program_options;
 
+/*
 string replace_all(string src, string from, string to) {
 	while(src.find(from) != string::npos)
 		src.replace(src.find(from), from.length(), to);
 	return src;
 }
+*/
 
 array<string, StateInOut::size> StateInOut::names = {"uk", "nonuk"};
 

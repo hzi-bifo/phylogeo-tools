@@ -75,11 +75,13 @@ set<string> load_sample_names(string fn) {
 	return sample_names;
 }
 
+/*
 string replace_all(string src, string from, string to) {
 	while(src.find(from) != string::npos)
 		src.replace(src.find(from), from.length(), to);
 	return src;
 }
+*/
 
 
 // Algorithm: Given a sample file and a tree, sub-trees with specified samples are extracted as sub-trees.

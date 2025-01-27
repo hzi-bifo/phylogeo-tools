@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
 		if (m.second.size() < mutation_min_size) continue;
 		ofstream fo(folder + m.first + ".txt");
 		//bool first = true;
-		for (auto const s : m.second) {
+		for (auto const& s : m.second) {
 			//if (!first) fo << ",";
 			fo << s << endl;
 			//first = false;

@@ -14,93 +14,93 @@ namespace po = boost::program_options;
 
 array<string, StateInOut::size> StateInOut::names = {"UK", "nonUK"};
 
-struct CharModel {
-	int NA_COUNT;
-
-	int na_to_int(char na) {
-		na = toupper(na);
-		if (!__char_is_valid[(int)na]) {
-			cerr << "Invalid char '" << na << "'" << endl;
-		}
-		assert(__char_is_valid[(int)na] == true);
-		return __char_to_int[(int)na];
-		/*
-		if (na == 'A') return 0;
-		if (na == 'T') return 1;
-		if (na == 'C') return 2;
-		if (na == 'G') return 3;
-		if (na == '-') return 4;
-		if (na == 'N') return 5;
-		return 5;
-		*/
-	}
-
-	int na_to_int(string na) {
-		return na_to_int(na[0]);
-	}
-
-	char int_to_char(int na) {
-		assert(na < NA_COUNT);
-		return __int_to_char[na];
-		/*
-		switch (na) {
-			case 0: return 'A';
-			case 1: return 'T';
-			case 2: return 'C';
-			case 3: return 'G';
-			case 4: return '-';
-			case 5: return 'N';
-			default: return 'N';
-		}
-		assert(1 != 1);
-		*/
-	}
-
-	static const int MAX_NA_COUNT = 30;
-
-	int cost[MAX_NA_COUNT][MAX_NA_COUNT];
-	int __char_to_int[255];
-	char __int_to_char[MAX_NA_COUNT];
-	bool __char_is_valid[255];
-
-	void load_cost(string fn) {
-		ifstream f(fn);
-		vector<string> names;
-		for (size_t i=0; i<255; i++)
-			__char_is_valid[i] = false;
-		for (string line, v; getline(f, line); ) {
-			istringstream is(line.c_str());
-			if (names.size() == 0) {
-				for (string s; is >> s; )
-					names.push_back(s);
-				NA_COUNT = names.size();
-				for (size_t i=0; i<names.size(); i++) {
-					__int_to_char[i] = names[i][0];
-					__char_to_int[toupper(names[i][0])] = i;
-					__char_is_valid[(int)toupper(names[i][0])] = true;
-				}
-			} else {
-				is >> v;
-				for (int vv, i=0; is >> vv; i++) {
-					cost[na_to_int(v)][na_to_int(names[i])] = vv;
-				}
-			}
-		}
-
-		/*
-		cerr << "COST " << names << endl;
-		for (auto n1 : names) {
-			cerr << n1 << " ";
-			for (auto n2:names) {
-				cerr << cost[na_to_int(n1)][na_to_int(n2)] << " ";
-			}
-			cerr << endl;
-		}
-		*/
-	}
-
-
-};
+//struct CharModel {
+//	int NA_COUNT;
+//
+//	int na_to_int(char na) {
+//		na = toupper(na);
+//		if (!__char_is_valid[(int)na]) {
+//			cerr << "Invalid char '" << na << "'" << endl;
+//		}
+//		assert(__char_is_valid[(int)na] == true);
+//		return __char_to_int[(int)na];
+//		/*
+//		if (na == 'A') return 0;
+//		if (na == 'T') return 1;
+//		if (na == 'C') return 2;
+//		if (na == 'G') return 3;
+//		if (na == '-') return 4;
+//		if (na == 'N') return 5;
+//		return 5;
+//		*/
+//	}
+//
+//	int na_to_int(string na) {
+//		return na_to_int(na[0]);
+//	}
+//
+//	char int_to_char(int na) {
+//		assert(na < NA_COUNT);
+//		return __int_to_char[na];
+//		/*
+//		switch (na) {
+//			case 0: return 'A';
+//			case 1: return 'T';
+//			case 2: return 'C';
+//			case 3: return 'G';
+//			case 4: return '-';
+//			case 5: return 'N';
+//			default: return 'N';
+//		}
+//		assert(1 != 1);
+//		*/
+//	}
+//
+//	static const int MAX_NA_COUNT = 30;
+//
+//	int cost[MAX_NA_COUNT][MAX_NA_COUNT];
+//	int __char_to_int[255];
+//	char __int_to_char[MAX_NA_COUNT];
+//	bool __char_is_valid[255];
+//
+//	void load_cost(string fn) {
+//		ifstream f(fn);
+//		vector<string> names;
+//		for (size_t i=0; i<255; i++)
+//			__char_is_valid[i] = false;
+//		for (string line, v; getline(f, line); ) {
+//			istringstream is(line.c_str());
+//			if (names.size() == 0) {
+//				for (string s; is >> s; )
+//					names.push_back(s);
+//				NA_COUNT = names.size();
+//				for (size_t i=0; i<names.size(); i++) {
+//					__int_to_char[i] = names[i][0];
+//					__char_to_int[toupper(names[i][0])] = i;
+//					__char_is_valid[(int)toupper(names[i][0])] = true;
+//				}
+//			} else {
+//				is >> v;
+//				for (int vv, i=0; is >> vv; i++) {
+//					cost[na_to_int(v)][na_to_int(names[i])] = vv;
+//				}
+//			}
+//		}
+//
+//		/*
+//		cerr << "COST " << names << endl;
+//		for (auto n1 : names) {
+//			cerr << n1 << " ";
+//			for (auto n2:names) {
+//				cerr << cost[na_to_int(n1)][na_to_int(n2)] << " ";
+//			}
+//			cerr << endl;
+//		}
+//		*/
+//	}
+//
+//
+//};
 
 struct Data {
 	bool valid;

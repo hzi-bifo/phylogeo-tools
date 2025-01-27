@@ -1,4 +1,5 @@
 #include "tree.h"
+#include "metadata.h"
 //#include "state.h"
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
@@ -89,6 +90,7 @@ int main(int argc, char* argv[]) {
 	    ("remove-internal-node-label", "Remove label of internal nodes")
 	    ("metadata", po::value<string>(), "metadata file")
 	    ("in", po::value<string>(), "input tree")
+	    ("branch-scale", po::value<double>(), "Scale branch lenghts by this value.")
 	    ("inout-file", po::value<string>(), "input tree, list of files given in a file")
 	    ("out", po::value<string>(), "output tree")
 	    ("location_label", po::value<vector<string>>()->multitoken(), "location labels, e.g. Germany nonGermany")
@@ -101,7 +103,7 @@ int main(int argc, char* argv[]) {
 	    ("print-internal-node-label", po::value<bool>()->default_value(true), "print internal node labels")
 	    ("ilabel", po::value<bool>()->default_value(false), "override internal node labels")
 	    ("single-child", po::value<bool>()->default_value(true), "allow single-child internal nodes")
-	    ("samples", po::value<string>(), "sample files")
+	    ("samples", po::value<string>(), "print sample into this file")
 	    ("nexus-print-internal-labels", po::value<bool>()->default_value(true), "print internal nodes' labels in nexus output")
 	;
 
@@ -134,7 +136,12 @@ int main(int argc, char* argv[]) {
 	StateInOut::names = {vm["location_label"].as<vector<string>>()[0], vm["location_label"].as<vector<string>>()[1]};
 
 	string annotation = vm["metadata"].as<string>();
-	map<string, Metadata> id_to_name = load_map(annotation);
+	// map<string, Metadata> id_to_name = load_map(annotation);
+	map<string, Metadata> id_to_name;
+    for (MetadataReader mr(vm["metadata"].as<string>()); mr.next(); ) {
+        id_to_name[mr.metadata.id] = 
+            Metadata(mr.metadata.id, mr.metadata.name, mr.metadata.date, mr.metadata.location, mr.metadata.location_add, mr.metadata.pangolin);
+    }
 	cerr << "metadata loaded" << endl;
 
 	//0:GERMANY, 1:NON_GERMANY
@@ -209,8 +216,16 @@ int main(int argc, char* argv[]) {
 		//	np.print(cerr, phylo) << ";" << endl;
 		//}
 
-		if (vm["set-tip-location"].as<bool>())
-			phylo.set_tip_location(isolate_matrix);
+		if (vm["set-tip-location"].as<bool>()) {
+            vector<string> no_label_w_list;
+			phylo.set_tip_location(isolate_matrix, true, no_label_w_list);
+            if (no_label_w_list.size() > 0) {
+                cerr << "W tips with no location " << "(" << no_label_w_list.size() << ") " << "[";
+                for (size_t i=0; i<5 && i<no_label_w_list.size(); i++)
+                    cerr << no_label_w_list[i] << " ";
+                cerr << "]" << endl;
+            }
+        }
 
 		//phylo.annotation= "location=Germany";
 		if (vm.count("remove-internal-node-locations") > 0) {
@@ -246,6 +261,26 @@ int main(int argc, char* argv[]) {
 			phylo = singleChildInternalNodeRemover.run(phylo);
 			cerr << "Single child internal nodes removed " << singleChildInternalNodeRemover.removed_internal_count << endl;
 		}
+
+        if (vm.count("branch-scale")) {
+
+            struct BranchLengthScaler {
+                double scale;
+                BranchLengthScaler(double scale) : scale(scale) {
+
+                }
+
+                void run(INode& n) {
+                    n.branch_length *= scale;
+                    for (auto& c : n.children) {
+                        run(c);
+                    }
+                }
+            };
+
+            BranchLengthScaler bls(vm["branch-scale"].as<double>());
+            bls.run(phylo);
+        }
 
 		if (vm.count("samples") > 0) {
 			SamplePrinter<INode> sp;

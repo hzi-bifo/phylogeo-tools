@@ -228,7 +228,7 @@ struct Sampler {
 			}
 			size_t sampled_size_old = sampled_size;
 			if (sampled_size < keep_count) {
-				random_shuffle(all.begin(), all.end());
+				std::random_shuffle(all.begin(), all.end());
 				for (size_t i=0; i < all.size() && sampled_size < keep_count; i++) {
 					if (all[i]->data.sampled == false) {
 						all[i]->data.sampled = true;
